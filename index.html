@@ -42,8 +42,8 @@
     <div class="container mx-auto bg-white rounded-2xl shadow-lg p-5 md:p-7 relative">
 
         <header class="text-center mb-4 relative">
-            <h1 class="text-xl md:text-2xl font-bold text-slate-800"><span class="text-blue-600 text-2xl md:text-3xl">北馬</span>新生兒入院摘要與會診單產生器</h1>
-            <p class="text-slate-400 text-sm mt-1">Mackay Memorial Hospital (Taipei) · BR Admission Summary & Consultation Form Generator</p>
+            <h1 class="text-xl md:text-2xl font-bold text-slate-800"><span id="campusName" class="text-blue-600 text-2xl md:text-3xl">北馬</span>新生兒入院摘要與會診單產生器</h1>
+            <p class="text-slate-400 text-sm mt-1"><span id="campusFullName">Mackay Memorial Hospital (Taipei)</span> · BR Admission Summary & Consultation Form Generator</p>
             <p class="text-slate-400 text-xs mt-0.5">因應各院區常規差異，頭圍與血糖監測描述方式略有不同</p>
             <button id="openLogBtn" class="absolute right-0 top-0 text-xs text-slate-400 hover:text-slate-600 underline">開發日誌</button>
         </header>
@@ -84,12 +84,12 @@
                         <div>
                             <label class="flex items-center gap-1.5"><input type="checkbox" id="peCaput" class="h-3.5 w-3.5 rounded">Caput succedaneum</label>
                             <div id="caputDetails" class="hidden ml-5 mt-0.5">
-                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" name="caputDetail" value="check HC Q2H then QD" class="h-3 w-3 rounded">HC Q2H&rarr;QD</label>
+                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="caputHcInput" name="caputDetail" value="check HC Q2H then QD" class="h-3 w-3 rounded"><span id="caputHcLabel">HC Q2H&rarr;QD</span></label>
                             </div>
                         </div>
                         <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Cephalohematoma" id="peCeph" class="h-3.5 w-3.5 rounded">Cephalohematoma</label>
                         <div id="cephDetails" class="hidden ml-5 mt-0.5">
-                            <label class="flex items-center gap-1 text-xs"><input type="checkbox" name="cephDetail" value="check HC Q2H then QD" class="h-3 w-3 rounded">HC Q2H&rarr;QD</label>
+                            <label class="flex items-center gap-1 text-xs"><input type="checkbox" id="cephHcInput" name="cephDetail" value="check HC Q2H then QD" class="h-3 w-3 rounded"><span id="cephHcLabel">HC Q2H&rarr;QD</span></label>
                         </div>
                         <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Molding" class="h-3.5 w-3.5 rounded">Molding</label>
                         <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Craniotabes" class="h-3.5 w-3.5 rounded">Craniotabes</label>
@@ -286,6 +286,32 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
     </div>
 
     <script>
+        // ============================================================
+        // CAMPUS CONFIG (URL ?campus=tpc|ttmh，預設 tpc)
+        // 新增院區只要加 entry，HTML/JS 不用改
+        // ============================================================
+        const CAMPUS_CONFIGS = {
+            tpc: {
+                name: '北馬',
+                fullName: 'Mackay Memorial Hospital (Taipei)',
+                hcMonitor: {
+                    label: 'HC Q2H&rarr;QD',
+                    value: 'check HC Q2H then QD',
+                    dischargeSentence: 'every 2 hours (Q2H) for the first day, followed by daily (QD) measurements until discharge',
+                },
+            },
+            ttmh: {
+                name: '東馬',
+                fullName: 'Mackay Memorial Hospital (Taitung)',
+                hcMonitor: {
+                    label: 'HC Q8H',
+                    value: 'check HC Q8H',
+                    dischargeSentence: 'every 8 hours (Q8H) until discharge',
+                },
+            },
+        };
+        const CAMPUS = CAMPUS_CONFIGS[new URLSearchParams(window.location.search).get('campus')] || CAMPUS_CONFIGS.tpc;
+
         // ============================================================
         // DOM & STATE
         // ============================================================
@@ -791,7 +817,7 @@ ${disposition}`;
                 if(caputHC) dxParts.push('caput succedaneum');
                 if(cephHC) dxParts.push('cephalohematoma');
                 const dx=dxParts.join(' and ');
-                cc.push(`Due to the presence of ${hl(dx)}, head circumference was monitored ${hl('every 2 hours (Q2H) for the first day, followed by daily (QD) measurements until discharge')}. ${hl('No significant interval increase was observed')}.`);
+                cc.push(`Due to the presence of ${hl(dx)}, head circumference was monitored ${hl(CAMPUS.hcMonitor.dischargeSentence)}. ${hl('No significant interval increase was observed')}.`);
             }
             if(peFindings.some(f=>f.includes('Fever'))) cc.push(`The infant developed ${hl('fever')} during the hospital course, which ${hl('resolved without intervention')}.`);
             // DDH — three-branch logic with DDH suspect fallback
@@ -1057,7 +1083,16 @@ ${disposition}`;
             DOM.copyActiveBtn.addEventListener('click',copyActiveTabContent);
             DOM.resetBtn.addEventListener('click',resetAll);
         }
-        window.addEventListener('load',()=>{setupConditionalCheckboxes();bindEvents();switchTab('diagnosis');updateUI();});
+        function applyCampusConfig(){
+            document.title = CAMPUS.name + '新生兒入院摘要與會診單產生器';
+            document.getElementById('campusName').textContent = CAMPUS.name;
+            document.getElementById('campusFullName').textContent = CAMPUS.fullName;
+            document.getElementById('caputHcLabel').innerHTML = CAMPUS.hcMonitor.label;
+            document.getElementById('caputHcInput').value = CAMPUS.hcMonitor.value;
+            document.getElementById('cephHcLabel').innerHTML = CAMPUS.hcMonitor.label;
+            document.getElementById('cephHcInput').value = CAMPUS.hcMonitor.value;
+        }
+        window.addEventListener('load',()=>{applyCampusConfig();setupConditionalCheckboxes();bindEvents();switchTab('diagnosis');updateUI();});
     </script>
 </body>
 </html>
