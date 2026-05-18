@@ -187,6 +187,12 @@
                     <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" name="sepsisReason" value="fever" class="h-3.5 w-3.5 rounded text-red-600">Neonatal fever</label>
                     <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" name="sepsisReason" value="maternal_fever" class="h-3.5 w-3.5 rounded text-red-600">Maternal fever</label>
                 </div>
+
+                <span class="text-slate-300 hidden sm:inline">|</span>
+
+                <span class="text-sm font-semibold text-slate-600">衛教詳盡度:</span>
+                <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="verbosity" value="short" class="h-3.5 w-3.5 text-blue-600" checked><span class="text-slate-600">簡明</span></label>
+                <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="verbosity" value="long" class="h-3.5 w-3.5 text-blue-600"><span class="text-slate-600">詳盡</span></label>
             </div>
         </div>
 
@@ -331,6 +337,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             sepsisWorkup: document.getElementById('sepsisWorkup'),
             sepsisReasons: document.getElementById('sepsisReasons'),
             sepsisReasonCbs: document.querySelectorAll('input[name="sepsisReason"]'),
+            verbosityRadios: document.querySelectorAll('input[name="verbosity"]'),
             openLogBtn: document.getElementById('openLogBtn'),
             closeLogBtn: document.getElementById('closeLogBtn'),
             logModal: document.getElementById('logModal'),
@@ -366,6 +373,22 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         }
         const hl = (text) => `<span class="highlight">${text}</span>`;
         const joinOxford = (arr) => arr.length <= 2 ? arr.join(' and ') : arr.slice(0,-1).join(', ') + ', and ' + arr[arr.length-1];
+
+        // ============================================================
+        // EDUCATION TEMPLATES (短/長兩版，受 verbosity toggle 控制)
+        // 新增 item：加 { short, long } 兩個 fn，generator 用 EDU_TEMPLATES[key][verb](args)
+        // ============================================================
+        const EDU_TEMPLATES = {
+            udt: {
+                short: (desc) => `The infant was noted to have ${hl(desc)}. ${hl('Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic.')}`,
+                long: (desc) => hl(`The infant was noted to have ${desc}. Caregivers were counseled regarding the condition and the importance of regular follow-up with pediatric surgery or urology to monitor testicular position and determine whether surgical correction is necessary. Potential complications, including infertility, testicular torsion, and increased risk of malignancy, were discussed. Caregivers were advised to observe for scrotal swelling, redness, or pain and to seek medical attention promptly if these occur. Caregivers verbalized understanding of the condition and follow-up plan.`),
+            },
+            hydrocele: {
+                short: () => `The infant was noted to have ${hl('hydrocele')}. ${hl('Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic.')}`,
+                long: () => hl(`The infant was noted to have hydrocele. Caregivers were counseled regarding the condition, including its typical natural resolution within the first 12-18 months of age and the indications for surgical intervention if it persists beyond that age. Caregivers were advised to seek immediate medical attention if the scrotal swelling acutely enlarges, becomes painful, or is associated with redness, which may suggest an incarcerated hernia. Caregivers verbalized understanding of the condition and follow-up plan.`),
+            },
+        };
+        const getVerbosity = () => document.querySelector('input[name="verbosity"]:checked')?.value || 'short';
 
         // ============================================================
         // MODULAR PARSERS
@@ -841,15 +864,16 @@ ${disposition}`;
             }
             if(data.isHighRiskForHypoglycemia) cc.push(hl("Blood glucose levels were monitored per protocol and remained within normal limits."));
             // UDT education
+            const verb=getVerbosity();
             const udtPE=peFindings.find(f=>f.includes('Undescended testis'));
             if(udtPE){
                 const sideM=udtPE.match(/\((lt|rt|bilateral)\)/i);
                 const sideStr=sideM?(sideM[1].toLowerCase()==='bilateral'?'bilateral':sideM[1].toLowerCase()==='lt'?'left':'right'):'';
                 const udtDesc=sideStr==='bilateral'?'bilateral undescended testes':(sideStr?sideStr+' ':'')+'undescended testis';
-                cc.push(`The infant was noted to have ${hl(udtDesc)}. ${hl('Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic.')}`);
+                cc.push(EDU_TEMPLATES.udt[verb](udtDesc));
             }
             if(peFindings.some(f=>f.includes('Hydrocele'))){
-                cc.push(`The infant was noted to have ${hl('hydrocele')}. ${hl('Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic.')}`);
+                cc.push(EDU_TEMPLATES.hydrocele[verb]());
             }
             if(cc.length>0) parts.push(cc.join(" "));
             if(nbcT){
@@ -1023,6 +1047,7 @@ ${disposition}`;
             document.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
             document.querySelectorAll('input[type="radio"]').forEach(r=>r.checked=false);
             document.getElementById('genderFemale').checked=true;
+            document.querySelector('input[name="verbosity"][value="short"]').checked=true;
             genderManuallySet=false;
             ['respDistressDetails','udtDetails','herniaDetails','caputDetails','cephDetails','nbcReasons','sepsisReasons'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
             sepsisManuallyUnchecked=false;
@@ -1081,6 +1106,7 @@ ${disposition}`;
             document.querySelectorAll('#peRespDistress,#peUDT,#peHernia,#peCaput,#peCeph').forEach(i=>i.addEventListener('change',updateUI));
             DOM.nbcReasonRadios.forEach(i=>i.addEventListener('change',updateUI));
             DOM.sepsisReasonCbs.forEach(i=>i.addEventListener('change',updateUI));
+            DOM.verbosityRadios.forEach(r=>r.addEventListener('change',updateUI));
             DOM.inputData.addEventListener('input',debouncedUpdateUI);
             DOM.copyActiveBtn.addEventListener('click',copyActiveTabContent);
             DOM.resetBtn.addEventListener('click',resetAll);
