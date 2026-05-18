@@ -277,6 +277,8 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                     <section>
                         <h4 class="font-bold text-slate-700 text-base">更新歷程</h4>
                         <ul class="space-y-2 mt-1">
+                            <li><span class="font-semibold text-slate-800">[v2.6]</span> 多院區架構：URL <code>?campus=ttmh</code> 切東馬（HC Q8H 對應）、新增「衛教詳盡度」toggle（簡明/詳盡）、UDT 衛教預設短版、Hydrocele 衛教新增、Respiratory distress 不再進診斷 tab（symptom 非 dx，admission/discharge/consult narrative 已 cover）。</li>
+                            <li><span class="font-semibold text-slate-800">[v2.5]</span> 同步 parser 修正：PROM/GBS/GDM 負向比對防跨行（<code>[^.\n]*</code>）、血型備用格式（O type 寫法）、vacuum regex 加強、入院摘要 GBS 描述改為完整英文句式、vacuum/forceps/painless 顯示改為自然英文、會診單 NSD 加入 vacuum-assisted/forceps-assisted 標示。</li>
                             <li><span class="font-semibold text-slate-800">[v2.3]</span> UI 全面改版：Tab 切換、解析狀態列、Reset 按鈕、NBC 獨立區塊、PE 欄位合併優化、性別精簡內嵌、左邊框顏色區分、統一複製按鈕。會診單強化：補齊 serology/blood type/GBS/GDM、全部 PE findings 帶入、Resuscitation 動態（RD&rarr;O2+）、Prenatal steroid 早產自動提示、Disposition 反映 NBC、修正 typo。</li>
                             <li><span class="font-semibold text-slate-800">[v2.2]</span> Serology 部分提供修正、RD+NBC 標點修正、NBC 非 RD 分支、Nasal flaring、DDH 雙陽性、出院 RD 動態、GBS incomplete IAP、C/S 空括號。</li>
                             <li><span class="font-semibold text-slate-800">[v2.1]</span> 血型 regex、GA 多格式、"no PROM or GBS or GDM"、Abortion 解析、Pre-eclampsia、MAS 統一、Clipboard API、Debounce。</li>
