@@ -846,7 +846,10 @@ ${disposition}`;
                 const sideM=udtPE.match(/\((lt|rt|bilateral)\)/i);
                 const sideStr=sideM?(sideM[1].toLowerCase()==='bilateral'?'bilateral':sideM[1].toLowerCase()==='lt'?'left':'right'):'';
                 const udtDesc=sideStr==='bilateral'?'bilateral undescended testes':(sideStr?sideStr+' ':'')+'undescended testis';
-                cc.push(hl(`The infant was noted to have ${udtDesc}. Caregivers were counseled regarding the condition and the importance of regular follow-up with pediatric surgery or urology to monitor testicular position and determine whether surgical correction is necessary. Potential complications, including infertility, testicular torsion, and increased risk of malignancy, were discussed. Caregivers were advised to observe for scrotal swelling, redness, or pain and to seek medical attention promptly if these occur. Caregivers verbalized understanding of the condition and follow-up plan.`));
+                cc.push(`The infant was noted to have ${hl(udtDesc)}. ${hl('Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic.')}`);
+            }
+            if(peFindings.some(f=>f.includes('Hydrocele'))){
+                cc.push(`The infant was noted to have ${hl('hydrocele')}. ${hl('Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic.')}`);
             }
             if(cc.length>0) parts.push(cc.join(" "));
             if(nbcT){
@@ -879,7 +882,6 @@ ${disposition}`;
             // PE-based diagnoses with proper clinical naming
             const dxMap = {
                 'Jaundice': 'Neonatal jaundice',
-                'Respiratory distress': 'Respiratory distress',
                 'Cyanosis': 'Cyanosis',
                 'Pale': 'Pallor',
                 'Fever': 'Neonatal fever',
