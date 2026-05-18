@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>北馬新生兒入院摘要與會診單產生器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; }
+        .container { max-width: 1280px; width: 100%; }
+        textarea { resize: vertical; }
+        .highlight {
+            text-decoration: underline; text-decoration-style: dotted;
+            text-decoration-color: #3b82f6; text-decoration-thickness: 1.5px;
+            background-color: #eff6ff; padding: 0 2px; border-radius: 3px; font-weight: 500;
+        }
+        .output-div {
+            min-height: 360px; line-height: 1.7; white-space: pre-wrap;
+            word-wrap: break-word; font-size: 0.95rem;
+        }
+        #consultOutput { font-family: monospace; font-size: 0.875rem; }
+        textarea::placeholder { color: #cbd5e1; }
+        .tab-btn {
+            padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 600;
+            border-bottom: 3px solid transparent; color: #64748b; cursor: pointer;
+            transition: all 0.15s; background: none;
+            border-top: none; border-left: none; border-right: none;
+        }
+        .tab-btn:hover { color: #334155; }
+        .tab-btn.active-summary { color: #2563eb; border-bottom-color: #2563eb; }
+        .tab-btn.active-consult { color: #0d9488; border-bottom-color: #0d9488; }
+        .tab-btn.active-discharge { color: #9333ea; border-bottom-color: #9333ea; }
+        .tab-btn.active-diagnosis { color: #d97706; border-bottom-color: #d97706; }
+        .tab-panel { visibility: hidden; position: absolute; height: 0; overflow: hidden; pointer-events: none; }
+        .tab-panel.active { visibility: visible; position: relative; height: auto; overflow: visible; pointer-events: auto; }
+        .parse-ok { background: #dcfce7; color: #166534; }
+        .parse-warn { background: #fef9c3; color: #854d0e; }
+        .parse-badge { font-size: 0.7rem; padding: 1px 6px; border-radius: 9999px; font-weight: 500; white-space: nowrap; }
+    </style>
+</head>
+<body class="bg-slate-100 p-4">
+    <div class="container mx-auto bg-white rounded-2xl shadow-lg p-5 md:p-7 relative">
+
+        <header class="text-center mb-4 relative">
+            <h1 class="text-xl md:text-2xl font-bold text-slate-800"><span class="text-blue-600 text-2xl md:text-3xl">北馬</span>新生兒入院摘要與會診單產生器</h1>
+            <p class="text-slate-400 text-sm mt-1">Mackay Memorial Hospital (Taipei) · BR Admission Summary & Consultation Form Generator</p>
+            <p class="text-slate-400 text-xs mt-0.5">因應各院區常規差異，頭圍與血糖監測描述方式略有不同</p>
+            <button id="openLogBtn" class="absolute right-0 top-0 text-xs text-slate-400 hover:text-slate-600 underline">開發日誌</button>
+        </header>
+
+        <!-- PE Section with inline gender -->
+        <div class="mb-4 border-b pb-4">
+            <div class="flex items-center justify-center gap-4 mb-3">
+                <h2 class="text-base font-semibold text-slate-700">理學檢查 (PE)</h2>
+                <span class="text-slate-300">|</span>
+                <div class="flex items-center gap-3 text-sm">
+                    <span class="text-slate-500">性別:</span>
+                    <label class="flex items-center gap-1 cursor-pointer"><input id="genderMale" name="gender" type="radio" value="male" class="h-3.5 w-3.5 text-blue-600"><span class="text-slate-600">男</span></label>
+                    <label class="flex items-center gap-1 cursor-pointer"><input id="genderFemale" name="gender" type="radio" value="female" class="h-3.5 w-3.5 text-blue-600" checked><span class="text-slate-600">女</span></label>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-x-4 gap-y-3 text-sm">
+                <!-- General -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">General</h3>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Jaundice" class="h-3.5 w-3.5 rounded">Jaundice</label>
+                        <div>
+                            <label class="flex items-center gap-1.5"><input type="checkbox" id="peRespDistress" class="h-3.5 w-3.5 rounded">Resp. distress</label>
+                            <div id="respDistressDetails" class="hidden ml-5 space-y-1 mt-0.5">
+                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" name="respSymptom" value="nasal flaring" class="h-3 w-3 rounded">Nasal flaring</label>
+                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" name="respSymptom" value="retraction" class="h-3 w-3 rounded">Retraction</label>
+                            </div>
+                        </div>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Cyanosis" class="h-3.5 w-3.5 rounded">Cyanosis</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Pale" class="h-3.5 w-3.5 rounded">Pale</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Fever" class="h-3.5 w-3.5 rounded">Fever</label>
+                    </div>
+                </div>
+                <!-- Head -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">Head</h3>
+                    <div class="space-y-1.5">
+                        <div>
+                            <label class="flex items-center gap-1.5"><input type="checkbox" id="peCaput" class="h-3.5 w-3.5 rounded">Caput succedaneum</label>
+                            <div id="caputDetails" class="hidden ml-5 mt-0.5">
+                                <label class="flex items-center gap-1 text-xs"><input type="checkbox" name="caputDetail" value="check HC Q2H then QD" class="h-3 w-3 rounded">HC Q2H&rarr;QD</label>
+                            </div>
+                        </div>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Cephalohematoma" id="peCeph" class="h-3.5 w-3.5 rounded">Cephalohematoma</label>
+                        <div id="cephDetails" class="hidden ml-5 mt-0.5">
+                            <label class="flex items-center gap-1 text-xs"><input type="checkbox" name="cephDetail" value="check HC Q2H then QD" class="h-3 w-3 rounded">HC Q2H&rarr;QD</label>
+                        </div>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Molding" class="h-3.5 w-3.5 rounded">Molding</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Craniotabes" class="h-3.5 w-3.5 rounded">Craniotabes</label>
+                    </div>
+                </div>
+                <!-- Cardio/Abd merged -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">Cardio / Abd</h3>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Heart murmur" class="h-3.5 w-3.5 rounded">Heart murmur</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Abdominal distension" class="h-3.5 w-3.5 rounded">Abd. distension</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Umbilical hernia" class="h-3.5 w-3.5 rounded">Umbilical hernia</label>
+                    </div>
+                </div>
+                <!-- GU -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">GU</h3>
+                    <div class="space-y-1.5">
+                        <div>
+                            <label class="flex items-center gap-1.5"><input type="checkbox" id="peUDT" class="h-3.5 w-3.5 rounded">Undescended testis</label>
+                            <div id="udtDetails" class="hidden ml-5 mt-0.5 flex items-center gap-2 text-xs">
+                                <label><input type="radio" name="udtSide" value="(lt)" class="mr-0.5">Lt</label>
+                                <label><input type="radio" name="udtSide" value="(rt)" class="mr-0.5">Rt</label>
+                                <label><input type="radio" name="udtSide" value="(bilateral)" class="mr-0.5">Bil</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="flex items-center gap-1.5"><input type="checkbox" id="peHernia" class="h-3.5 w-3.5 rounded">Inguinal hernia</label>
+                            <div id="herniaDetails" class="hidden ml-5 mt-0.5 flex items-center gap-2 text-xs">
+                                <label><input type="radio" name="herniaSide" value="(lt)" class="mr-0.5">Lt</label>
+                                <label><input type="radio" name="herniaSide" value="(rt)" class="mr-0.5">Rt</label>
+                                <label><input type="radio" name="herniaSide" value="(bilateral)" class="mr-0.5">Bil</label>
+                            </div>
+                        </div>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Hypospadias" class="h-3.5 w-3.5 rounded">Hypospadias</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Hydrocele" class="h-3.5 w-3.5 rounded">Hydrocele</label>
+                    </div>
+                </div>
+                <!-- MSK -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">MSK</h3>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Clavicle fracture" class="h-3.5 w-3.5 rounded">Clavicle fracture</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="DDH suspect" class="h-3.5 w-3.5 rounded">DDH suspect</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Sacral dimples" class="h-3.5 w-3.5 rounded">Sacral dimples</label>
+                    </div>
+                </div>
+                <!-- Neuro -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">Neuro</h3>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Hypotonia" class="h-3.5 w-3.5 rounded">Hypotonia</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Jitteriness" class="h-3.5 w-3.5 rounded">Jitteriness</label>
+                    </div>
+                </div>
+                <!-- Skin -->
+                <div>
+                    <h3 class="font-bold text-slate-600 border-b mb-1.5 pb-0.5 text-xs uppercase tracking-wide">Skin</h3>
+                    <div class="space-y-1.5">
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Forceps/vaccum impression" class="h-3.5 w-3.5 rounded">Forceps/vacuum</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Hemangioma" class="h-3.5 w-3.5 rounded">Hemangioma</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Mongolian spots" class="h-3.5 w-3.5 rounded">Mongolian spots</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Skin rash/pigmentation" class="h-3.5 w-3.5 rounded">Rash/pigmentation</label>
+                        <label class="flex items-center gap-1.5"><input type="checkbox" name="peFinding" value="Erythema toxicum" class="h-3.5 w-3.5 rounded">Erythema toxicum</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NBC / Transfer settings -->
+        <div class="mb-4 border-b pb-3">
+            <div class="flex items-center gap-4 justify-center flex-wrap">
+                <span class="text-sm font-semibold text-slate-600">轉診設定:</span>
+                <label class="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input type="checkbox" id="nbcTransfer" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                    <span class="font-medium text-slate-700">轉至 NBC 住院</span>
+                </label>
+                <div id="nbcReasons" class="hidden flex items-center gap-3">
+                    <span class="text-xs text-slate-400">原因:</span>
+                    <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="nbcReason" value="respiratory" class="h-3.5 w-3.5 text-blue-600"><span class="text-slate-600">呼吸喘</span></label>
+                    <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="radio" name="nbcReason" value="jaundice" class="h-3.5 w-3.5 text-blue-600"><span class="text-slate-600">黃疸</span></label>
+                </div>
+
+                <span class="text-slate-300 hidden sm:inline">|</span>
+
+                <span class="text-sm font-semibold text-slate-600">感染評估:</span>
+                <label class="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input type="checkbox" id="sepsisWorkup" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500">
+                    <span class="font-medium text-slate-700">Sepsis workup</span>
+                </label>
+                <div id="sepsisReasons" class="hidden flex items-center gap-3 flex-wrap">
+                    <span class="text-xs text-slate-400">原因:</span>
+                    <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" name="sepsisReason" value="prom" class="h-3.5 w-3.5 rounded text-red-600">PROM &gt;18hr</label>
+                    <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" name="sepsisReason" value="gbs" class="h-3.5 w-3.5 rounded text-red-600">GBS incomplete IAP</label>
+                    <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" name="sepsisReason" value="fever" class="h-3.5 w-3.5 rounded text-red-600">Neonatal fever</label>
+                    <label class="flex items-center gap-1 text-sm cursor-pointer"><input type="checkbox" name="sepsisReason" value="maternal_fever" class="h-3.5 w-3.5 rounded text-red-600">Maternal fever</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main: Input + Tabbed Output -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <!-- Left: Input -->
+            <div class="flex flex-col">
+                <label for="inputData" class="text-sm font-semibold text-slate-600 mb-1.5">原始資料</label>
+                <textarea id="inputData" rows="16" placeholder="[範例格式 1]
+Birth date and time: 2023/07/05 03:01
+Term, GA 38+5 wk, BW 3200 gm, AGA
+G1 P1 A0, CS due to breech presentation
+29 y/o mother
+APGAR score: 9 -> 10
+PROM for 12 hrs
+GBS(+) s/p complete IAP
+Maternal blood group: type A, Rh+
+GDM(+) under diet control
+HBsAg (-), HBeAg(-), HIV(-), RPR(+)
+MAS -
+
+[範例格式 2]
+Term female infant, G1P1A0
+gestational age 39 weeks
+birth weight 3172 gm
+AGA
+painless VD with vaccum assited
+no PROM or GBS or GDM
+Apgar score 10 to 10
+maternal blood group: type O, Rh+
+HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition text-sm text-slate-700 bg-slate-50 flex-1"></textarea>
+                <!-- Parse status bar -->
+                <div id="parseStatus" class="mt-2 flex flex-wrap gap-1.5 items-center min-h-[24px]"></div>
+                <!-- Reset -->
+                <div class="mt-2"><button id="resetBtn" class="text-sm bg-slate-200 text-slate-600 font-semibold py-1.5 px-4 rounded-lg hover:bg-slate-300 active:bg-slate-400 transition">清除重填 (Reset)</button></div>
+            </div>
+
+            <!-- Right: Tabbed Output -->
+            <div class="flex flex-col">
+                <div class="flex border-b border-slate-200 mb-0">
+                    <button class="tab-btn active-diagnosis" data-tab="diagnosis">診斷</button>
+                    <button class="tab-btn" data-tab="summary">入院摘要</button>
+                    <button class="tab-btn" data-tab="consult">會診單</button>
+                    <button class="tab-btn" data-tab="discharge">出院摘要</button>
+                    <button id="copyActiveBtn" class="ml-auto text-xs font-semibold py-1 px-3 rounded bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition self-center mr-1" style="border-bottom:2px solid #d97706">複製 (Copy)</button>
+                </div>
+                <div class="relative flex-1">
+                    <div id="tab-summary" class="tab-panel">
+                        <div id="outputSummary" class="output-div w-full p-4 border border-slate-200 border-l-4 border-l-blue-500 rounded-b-lg bg-white text-slate-800"></div>
+                    </div>
+                    <div id="tab-consult" class="tab-panel">
+                        <div id="consultOutput" class="output-div w-full p-4 border border-slate-200 border-l-4 border-l-teal-500 rounded-b-lg bg-white text-slate-800 font-mono text-sm"></div>
+                    </div>
+                    <div id="tab-discharge" class="tab-panel">
+                        <div id="dischargeOutput" class="output-div w-full p-4 border border-slate-200 border-l-4 border-l-purple-500 rounded-b-lg bg-white text-slate-800"></div>
+                    </div>
+                    <div id="tab-diagnosis" class="tab-panel active">
+                        <div id="diagnosisOutput" class="output-div w-full p-4 border border-slate-200 border-l-4 border-l-amber-500 rounded-b-lg bg-white text-slate-800 font-mono text-sm" style="min-height:200px"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Log Modal -->
+    <div id="logModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
+        <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+            <div class="mt-3 text-center">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 border-b pb-2">開發日誌與功能說明</h3>
+                <div class="mt-4 text-left h-96 overflow-y-auto text-sm text-gray-600 space-y-4 px-2">
+                    <section>
+                        <h4 class="font-bold text-slate-700 text-base">功能特色</h4>
+                        <ul class="list-disc pl-5 space-y-1 mt-1">
+                            <li><strong class="text-blue-600">智慧解析</strong>：自動識別 GA, BW, APGAR, GBS, GDM, PROM 等關鍵數值。</li>
+                            <li><strong class="text-blue-600">多格式支援</strong>：NSD/VD/CS、"38+5"/"38w5d"/"38 5/7" 等。</li>
+                            <li><strong class="text-blue-600">一鍵三單</strong>：即時生成入院摘要、會診單、出院摘要，Tab 切換。</li>
+                            <li><strong class="text-blue-600">解析狀態列</strong>：即時顯示各欄位解析結果。</li>
+                            <li><strong class="text-blue-600">高風險邏輯</strong>：早產/SGA/LGA/GDM&rarr;血糖監測、PROM&gt;18hr&rarr;sepsis workup、GBS incomplete IAP&rarr;sepsis workup、HBsAg(+)&rarr;HBIG。</li>
+                            <li><strong class="text-blue-600">轉診聯動</strong>：NBC 轉入設定同時影響入院摘要與出院摘要。</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h4 class="font-bold text-slate-700 text-base">更新歷程</h4>
+                        <ul class="space-y-2 mt-1">
+                            <li><span class="font-semibold text-slate-800">[v2.3]</span> UI 全面改版：Tab 切換、解析狀態列、Reset 按鈕、NBC 獨立區塊、PE 欄位合併優化、性別精簡內嵌、左邊框顏色區分、統一複製按鈕。會診單強化：補齊 serology/blood type/GBS/GDM、全部 PE findings 帶入、Resuscitation 動態（RD&rarr;O2+）、Prenatal steroid 早產自動提示、Disposition 反映 NBC、修正 typo。</li>
+                            <li><span class="font-semibold text-slate-800">[v2.2]</span> Serology 部分提供修正、RD+NBC 標點修正、NBC 非 RD 分支、Nasal flaring、DDH 雙陽性、出院 RD 動態、GBS incomplete IAP、C/S 空括號。</li>
+                            <li><span class="font-semibold text-slate-800">[v2.1]</span> 血型 regex、GA 多格式、"no PROM or GBS or GDM"、Abortion 解析、Pre-eclampsia、MAS 統一、Clipboard API、Debounce。</li>
+                            <li><span class="font-semibold text-slate-800">[v2.0]</span> 呼吸窘迫轉診修正；出院摘要優化；GDM/DDH 修正。</li>
+                            <li><span class="font-semibold text-slate-800">[v1.5&ndash;1.9]</span> 出院摘要、血糖監測、HBIG、PROM&gt;18hr sepsis、DDH 回診、Polished English。</li>
+                        </ul>
+                    </section>
+                    <div class="text-xs text-gray-400 border-t pt-2 mt-4">Designed for clinical efficiency.</div>
+                </div>
+                <div class="px-4 py-3"><button id="closeLogBtn" class="px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-blue-700">關閉</button></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // DOM & STATE
+        // ============================================================
+        const DOM = {
+            inputData: document.getElementById('inputData'),
+            outputSummary: document.getElementById('outputSummary'),
+            consultOutput: document.getElementById('consultOutput'),
+            dischargeOutput: document.getElementById('dischargeOutput'),
+            diagnosisOutput: document.getElementById('diagnosisOutput'),
+            copyActiveBtn: document.getElementById('copyActiveBtn'),
+            resetBtn: document.getElementById('resetBtn'),
+            parseStatus: document.getElementById('parseStatus'),
+            genderRadios: document.querySelectorAll('input[name="gender"]'),
+            nbcTransfer: document.getElementById('nbcTransfer'),
+            nbcReasons: document.getElementById('nbcReasons'),
+            nbcReasonRadios: document.querySelectorAll('input[name="nbcReason"]'),
+            sepsisWorkup: document.getElementById('sepsisWorkup'),
+            sepsisReasons: document.getElementById('sepsisReasons'),
+            sepsisReasonCbs: document.querySelectorAll('input[name="sepsisReason"]'),
+            openLogBtn: document.getElementById('openLogBtn'),
+            closeLogBtn: document.getElementById('closeLogBtn'),
+            logModal: document.getElementById('logModal'),
+            tabBtns: document.querySelectorAll('.tab-btn[data-tab]'),
+            tabPanels: document.querySelectorAll('.tab-panel'),
+        };
+        let genderManuallySet = false;
+        let activeTab = 'diagnosis';
+        let sepsisManuallyUnchecked = false;
+
+        // ============================================================
+        // TAB SYSTEM
+        // ============================================================
+        const tabColorClass = { summary: 'active-summary', consult: 'active-consult', discharge: 'active-discharge', diagnosis: 'active-diagnosis' };
+        const tabBorderColor = { summary: '#2563eb', consult: '#0d9488', discharge: '#9333ea', diagnosis: '#d97706' };
+
+        function switchTab(name) {
+            activeTab = name;
+            DOM.tabBtns.forEach(b => {
+                b.classList.remove('active-summary','active-consult','active-discharge','active-diagnosis');
+                if (b.dataset.tab === name) b.classList.add(tabColorClass[name]);
+            });
+            DOM.tabPanels.forEach(p => p.classList.toggle('active', p.id === `tab-${name}`));
+            DOM.copyActiveBtn.style.borderBottom = `2px solid ${tabBorderColor[name]}`;
+        }
+        DOM.tabBtns.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+        // ============================================================
+        // UTILITIES
+        // ============================================================
+        function debounce(fn, delay) {
+            let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), delay); };
+        }
+        const hl = (text) => `<span class="highlight">${text}</span>`;
+        const joinOxford = (arr) => arr.length <= 2 ? arr.join(' and ') : arr.slice(0,-1).join(', ') + ', and ' + arr[arr.length-1];
+
+        // ============================================================
+        // MODULAR PARSERS
+        // ============================================================
+        function parseGA(lines, text) {
+            const gaLine = lines.find(l => /GA|gestational\s*age/i.test(l)) || '';
+            let m = gaLine.match(/(?:GA|gestational\s*age)\s*[:]?\s*(?:at\s+)?([\d\+\/]+)/i);
+            if (m) return m[1];
+            const wd = text.match(/(\d+)\s*w\s*(\d+)\s*d/i);
+            if (wd) return `${wd[1]}+${wd[2]}`;
+            const fr = text.match(/(\d+)\s+(\d)\/7/);
+            if (fr) return `${fr[1]}+${fr[2]}`;
+            return '?';
+        }
+        function parseBW(lines) {
+            const l = lines.find(l => /BW|birth\s*weight/i.test(l)) || '';
+            const m = l.match(/(?:BW|birth\s*weight)\s*[:]?\s*(\d+)/i);
+            return m ? m[1] : '?';
+        }
+        function parseAGA(text) { const m = text.match(/\b(AGA|SGA|LGA)\b/i); return m ? m[1].toUpperCase() : 'AGA'; }
+        function parseGPA(lines) {
+            const l = lines.find(l => /G\d+.*P\d+/i.test(l)) || '';
+            const m = l.match(/G(\d+)\s*P(\d+)\s*(?:A(\d+))?/i);
+            return m ? { g:m[1], p:m[2], a:m[3]||'?' } : { g:'?', p:'?', a:'?' };
+        }
+        function parseDelivery(lines) {
+            const dl = lines.find(l => /\bNSD\b|\bC\/S\b|\bCS\b|\bVD\b/i.test(l)) || 'VD';
+            const vac = dl.match(/v[ac]+uum[\s\-]*(?:assist(?:ed|ance)?|assited|\(\+\))/i);
+            const forc = dl.match(/forceps?\s*(?:assited|assisted|\(\+\)|with)/i) || dl.includes('forcep');
+            const pain = dl.includes('painless');
+            let mode='?', csR='', csPrefix='';
+            const u = dl.toUpperCase();
+            if (u.includes('C/S')||u.includes('CS')) {
+                mode='C/S';
+                const d=dl.match(/due\s+to\s*(.*)/i); csR=d?d[1]:'';
+                if(/\belective\b/i.test(dl)) csPrefix='elective ';
+                else if(/\bemergency\b/i.test(dl)) csPrefix='emergency ';
+            }
+            else if (u.includes('NSD')||u.includes('VD')) mode='NSD';
+            return { deliveryLine:dl, vacuumMatch:vac, forcepsMatch:forc, painless:pain, deliveryMode:mode, csReason:csR, csPrefix:csPrefix };
+        }
+        function parsePROM(lines, text) {
+            // Negative patterns first
+            if (/\bno\s+(?:PROM|P?ROM)\b/i.test(text)||/\bno\b[^.\n]*\b(?:PROM|P?ROM)\b/i.test(text)) {
+                if (!/(?:PROM|P?ROM)\s*\(\+\)/i.test(text)) return {present:false,duration:null};
+            }
+            // Match PROM, PPROM, ROM
+            const pm = text.match(/(?:P?PROM|ROM)\s*[:\s]+((?:(?!\n).)*)/i);
+            if (pm) {
+                const c=pm[1];
+                if (c.toLowerCase().includes('no')||c.includes('(-)')) return {present:false,duration:null};
+                let h=0;
+                const dM=c.match(/(\d+)\s*days?/i);
+                const hM=c.match(/(\d+)\s*(?:hours?|hrs?|h)\b/i);
+                if(dM) h+=parseInt(dM[1])*24; if(hM) h+=parseInt(hM[1]);
+                if(h>0) return {present:true,duration:h.toString()};
+                if(c.includes('(+)')||/\bpos/i.test(c)||/\+/.test(c)) return {present:true,duration:'?'};
+                const nM=c.match(/(\d+)/);
+                if(nM) return {present:true,duration:nM[1]};
+                return {present:false,duration:null};
+            }
+            // Fallback: PROM (+) 20 hours anywhere in text
+            const fb=text.match(/(?:P?PROM|ROM)\s*\(\+\)\s*(.*)/i);
+            if(fb){
+                let h=0;
+                const dM=fb[1].match(/(\d+)\s*days?/i);
+                const hM=fb[1].match(/(\d+)\s*(?:hours?|hrs?|h)\b/i);
+                if(dM) h+=parseInt(dM[1])*24; if(hM) h+=parseInt(hM[1]);
+                if(h>0) return {present:true,duration:h.toString()};
+                const nM=fb[1].match(/(\d+)/);
+                if(nM) return {present:true,duration:nM[1]};
+                return {present:true,duration:'?'};
+            }
+            return {present:false,duration:null};
+        }
+        function parseGBS(lines, text) {
+            // Negative patterns: "no GBS", "no PROM or GBS", "GBS(-)", "GBS negative"
+            if (/\bno\s+(?:PROM\s+or\s+)?GBS\b/i.test(text)||/\bno\b[^.\n]*\bGBS\b/i.test(text)) {
+                if (!/GBS\s*\(?\+\)?/i.test(text)&&!/GBS\s*(?:pos|carrier|culture\s*pos|coloniz)/i.test(text)) return {isGbsPositive:false,gbs:'negative'};
+            }
+            // Find GBS line — also match "Group B streptococcus", "Group B strep", prefixed "maternal GBS"
+            let gl = lines.find(l=>/\bGBS\b|Group\s*B\s*strep/i.test(l))||'';
+            // Positive detection: (+), +, positive, pos, carrier, colonization, culture positive
+            const posPatterns = [/\(\+\)/, /GBS\s*\+/i, /\bpositive\b/i, /\bpos\b/i, /\bcarrier\b/i, /\bcoloniz/i, /culture\s*pos/i];
+            const isNeg = /\(\-\)/i.test(gl)||/\bneg\b/i.test(gl);
+            const isPos = !isNeg && posPatterns.some(p=>p.test(gl));
+            if(isPos) {
+                let g='positive';
+                const lc=gl.toLowerCase();
+                // IAP detection — check for negation BEFORE "complete"
+                const hasIncomplete = /\bincomplete\b/i.test(gl)||/\binadequate\b/i.test(gl)||/\bpartial\b/i.test(gl);
+                const hasNegatedComplete = /\b(?:without|not?|no)\s+(?:complete|adequate|completed)\s*IAP/i.test(gl);
+                const hasComplete = /\b(?:complete|adequate|completed)\s*IAP/i.test(gl)||/s\/p\s*(?:complete|adequate)?\s*IAP/i.test(gl);
+                if(hasIncomplete||hasNegatedComplete) g='positive with incomplete IAP';
+                else if(hasComplete) g='positive, s/p complete IAP';
+                return {isGbsPositive:true,gbs:g};
+            }
+            // Fallback: check full text for "GBS +"
+            if(/GBS\s*\+/i.test(text)&&!/GBS\s*\(\-\)/i.test(text)) {
+                let g='positive';
+                if(/\b(?:incomplete|inadequate|partial)\s*IAP/i.test(text)||/\b(?:without|not?|no)\s+(?:complete|adequate)\s*IAP/i.test(text)) g='positive with incomplete IAP';
+                else if(/\b(?:complete|adequate|completed)\s*IAP/i.test(text)&&!/\b(?:without|not?|no)\s+(?:complete|adequate)/i.test(text)) g='positive, s/p complete IAP';
+                return {isGbsPositive:true,gbs:g};
+            }
+            return {isGbsPositive:false,gbs:'negative'};
+        }
+        function parseGDM(lines, text) {
+            // Negative patterns
+            if (/\bno\s+(?:PROM\s+or\s+GBS\s+or\s+)?GDM\b/i.test(text)||/\bno\b[^.\n]*\bGDM\b/i.test(text)) {
+                if (!/GDM\s*\(?\+\)?/i.test(text)) return 'No GDM.';
+            }
+            // Find GDM/DM line (but not "admission", "administered")
+            const gl = lines.find(l=>/\bG?DM\b/i.test(l)&&!/admis|admini/i.test(l))||'';
+            if(gl.includes('(-)')||/\bneg\b/i.test(gl)) return 'No GDM.';
+            if(/diet\s*control/i.test(gl)||/\bdiet\b/i.test(gl)) return 'GDM under diet control.';
+            if(/\bOHA\b/i.test(gl)||/\bmedication\b/i.test(gl)||/\boral\s*hypoglycemic/i.test(gl)) return 'GDM under medication.';
+            if(/\binsulin\b/i.test(gl)) return 'GDM under insulin.';
+            if(/\(\+\)/.test(gl)||/GDM\s*\+/i.test(gl)||/\bGDM\b/i.test(gl)) return 'GDM.';
+            return 'No GDM.';
+        }
+        function parseBloodGroup(lines) {
+            const bl = lines.find(l=>l.toLowerCase().includes('blood group'))||'';
+            let bm=bl.match(/type\s*(AB|A|B|O)\b/i);
+            if(!bm) bm=bl.match(/\b(AB|A|B|O)\s*type\b/i);
+            let rm=bl.match(/Rh\s*([\+\-])/i);
+            if(!rm) rm=bl.match(/Rh\s*(positive|negative)/i);
+            const bt=bm?bm[1].toUpperCase():'?';
+            let rh='';
+            if(rm){
+                const v=rm[1];
+                rh=(v==='+'||v.toLowerCase()==='positive')?'Rh+':'Rh-';
+            }
+            return bt+(rh?`, ${rh}`:'');
+        }
+        function parseSerology(text) {
+            const g=(t)=>{const m=text.match(new RegExp(`${t}\\s*\\(?([\\+\\-])\\)?`,'i'));return m?m[1]:'?';};
+            return {HBsAg:g('HBsAg'),HBeAg:g('HBeAg'),HIV:g('HIV'),RPR:g('RPR')};
+        }
+        function parseMAS(lines) {
+            const ml=lines.find(l=>l.toLowerCase().includes('mas'))||'';
+            if(!ml) return true;
+            return !/MAS\s*\(?\+\)?/i.test(ml);
+        }
+
+        // ============================================================
+        // MAIN PARSER
+        // ============================================================
+        function parseInputData(text) {
+            const lines=text.split('\n').map(l=>l.trim()), data={};
+            const findLine=(kw)=>lines.find(l=>l.toLowerCase().includes(kw.toLowerCase()))||'';
+            data.ga=parseGA(lines,text); data.bw=parseBW(lines); data.aga=parseAGA(text);
+            const gpa=parseGPA(lines); data.g=gpa.g; data.p=gpa.p; data.a=gpa.a;
+            if(text.match(/female/i)) data.genderDetected='female';
+            else if(text.match(/male/i)) data.genderDetected='male';
+            Object.assign(data,parseDelivery(lines));
+            const ageLine=lines.find(l=>/\d+\s*y\/o/i.test(l))||'';
+            const ageM=ageLine.match(/(\d+)\s*y\/o/i);
+            data.motherAge=ageM?ageM[1]:'?';
+            const apgarLine=findLine('apgar');
+            const apN=apgarLine.match(/(\d+)\s*(?:->|to)\s*(\d+)/);
+            data.apgar=apN?`${apN[1]} -> ${apN[2]}`:'? -> ?';
+            const fLine=findLine('fetal distress');
+            data.fetalDistress=fLine.includes('(+')||fLine.toLowerCase().includes('due to fetal distress');
+            data.prom=parsePROM(lines,text);
+            const gbsR=parseGBS(lines,text); data.isGbsPositive=gbsR.isGbsPositive; data.gbs=gbsR.gbs;
+            data.gdm=parseGDM(lines,text); data.bloodGroup=parseBloodGroup(lines);
+            data.preEclampsia=!!text.match(/Pre-?eclampsia\s*(\(\+\)|positive|\+)/i);
+            data.serology=parseSerology(text); data.masIsAbsent=parseMAS(lines);
+            const ddhLine=findLine('DDH risk factors'); data.ddhRisk=[];
+            if(ddhLine.includes('Breech(+)')) data.ddhRisk.push('breech presentation');
+            if(ddhLine.includes('Family Hx (+)')) data.ddhRisk.push('family history of DDH');
+            if(ddhLine.includes('Oligohydramnios(+)')) data.ddhRisk.push('oligohydramnios');
+            if(ddhLine.includes('Twins(+)')) data.ddhRisk.push('twin pregnancy');
+            const compLine=findLine('子宮內壓迫徵象'); data.compressionSigns=[];
+            if(compLine.includes('斜頸(+)')) data.compressionSigns.push('torticollis');
+            if(compLine.includes('足踝內翻(+)')) data.compressionSigns.push('foot inversion');
+            if(compLine.includes('膝反曲(+)')) data.compressionSigns.push('genu recurvatum');
+            if(compLine.includes('大腿姿勢不對稱(+)')) data.compressionSigns.push('asymmetric thigh posture');
+            data.ddhPe=[];
+            if(text.match(/Barlow(?:\'s)?\s*(?:test)?\s*\(\+\)/i)) data.ddhPe.push("positive Barlow's sign");
+            if(text.match(/Ortolani(?:\'s)?\s*(?:test)?\s*\(\+\)/i)) data.ddhPe.push("positive Ortolani's sign");
+            if(text.match(/Galeazzi(?:\'s)?\s*(?:test)?\s*\(\+\)/i)) data.ddhPe.push("positive Galeazzi sign");
+            if(text.match(/Limitation of abduction\s*\(\+\)/i)) data.ddhPe.push("limitation of hip abduction");
+            const gaV=parseInt(data.ga)||40;
+            data.isHighRiskForHypoglycemia=gaV<37||data.aga==='SGA'||data.aga==='LGA'||!data.gdm.includes('No GDM');
+            data.selectedGender=document.querySelector('input[name="gender"]:checked')?.value||'female';
+            if(data.genderDetected&&!genderManuallySet) data.selectedGender=data.genderDetected;
+            return data;
+        }
+
+        // ============================================================
+        // PE FINDINGS
+        // ============================================================
+        function getPEFindings() {
+            const f=[];
+            document.querySelectorAll('input[name="peFinding"]:checked').forEach(cb=>f.push(cb.value));
+            const rd=document.getElementById('peRespDistress');
+            if(rd?.checked){const s=Array.from(document.querySelectorAll('#respDistressDetails input:checked')).map(i=>i.value);let v='Respiratory distress';if(s.length>0)v+=` (with ${s.join(', ')})`;f.push(v);}
+            const cap=document.getElementById('peCaput');
+            if(cap?.checked){const d=document.querySelector('#caputDetails input:checked');let v='Caput succedaneum';if(d)v+=` (${d.value})`;f.push(v);}
+            const udt=document.getElementById('peUDT');
+            if(udt?.checked){const s=document.querySelector('input[name="udtSide"]:checked')?.value||'';f.push(`Undescended testis ${s}`.trim());}
+            const her=document.getElementById('peHernia');
+            if(her?.checked){const s=document.querySelector('input[name="herniaSide"]:checked')?.value||'';f.push(`Inguinal hernia ${s}`.trim());}
+            return f;
+        }
+
+        // ============================================================
+        // GENERATE ADMISSION SUMMARY
+        // ============================================================
+        function generateSummary(data, peFindings) {
+            const hasRD=peFindings.some(f=>f.includes('Respiratory distress'));
+            let dd=[];
+            if(data.vacuumMatch) dd.push(hl('vacuum assistance'));
+            if(data.forcepsMatch) dd.push(hl('forceps assistance'));
+            if(data.painless) dd.push(hl('painless labor'));
+            const ddStr=dd.length>0?` with ${dd.join(' and ')}`:'';
+            let dStr=`${hl(data.csPrefix + data.deliveryMode)}`;
+            if(data.deliveryMode==='C/S'&&data.csReason) dStr+=` due to ${hl(data.csReason)}`;
+            dStr+=ddStr;
+            const compStr=data.fetalDistress?`, complicated by ${hl('fetal distress')}`:'';
+            let matPos=[];
+            if(data.gdm.includes('GDM')&&!data.gdm.includes('No GDM')){
+                let t=data.gdm;
+                if(t.includes('diet'))t=`GDM under ${hl('diet control')}`;
+                else if(t.includes('medication'))t=`GDM under ${hl('medication')}`;
+                else if(t.includes('insulin'))t=`GDM under ${hl('insulin')}`;
+                else t=hl('GDM');
+                matPos.push(t);
+            }
+            if(data.isGbsPositive) {
+                let gbsText='GBS colonization';
+                if(data.gbs.includes('s/p complete')||data.gbs.includes('complete IAP')&&!data.gbs.includes('incomplete'))
+                    gbsText=hl('GBS colonization with completed intrapartum antibiotic prophylaxis');
+                else if(data.gbs.includes('incomplete'))
+                    gbsText=hl('GBS colonization without adequate intrapartum antibiotic prophylaxis');
+                else gbsText=hl('GBS colonization');
+                matPos.push(gbsText);
+            }
+            if(data.preEclampsia) matPos.push(hl('Pre-eclampsia'));
+            const posSero=Object.entries(data.serology).filter(([,v])=>v==='+').map(([k])=>k);
+            const negSero=Object.entries(data.serology).filter(([,v])=>v==='-').map(([k])=>k);
+            if(posSero.length>0) matPos.push(`positive serology for ${hl(posSero.join(', '))}`);
+            let matNeg=[];
+            if(data.gdm.includes('No GDM')) matNeg.push(hl('GDM'));
+            if(!data.isGbsPositive) matNeg.push(hl('GBS colonization'));
+            if(Object.values(data.serology).every(v=>v==='-')) matNeg.push(hl('infectious serology (HBsAg, HBeAg, HIV, RPR)'));
+            else if(negSero.length>0) matNeg.push(hl(negSero.join(', ')));
+            let matStr=`Maternal blood type is ${hl(data.bloodGroup)}.`;
+            if(matPos.length>0){matStr+=` Maternal history was significant for ${matPos.join(', ')}.`;if(matNeg.length>0)matStr+=` Screening for ${matNeg.join(', ')} was negative.`;}
+            else if(matNeg.length>0) matStr+=` Maternal screening was negative for ${matNeg.join(', ')}.`;
+            let promT=data.prom.present?`PROM for ${hl(data.prom.duration)} hours`:null, masT=!data.masIsAbsent?'MAS':null;
+            let periStr='';
+            if(!promT&&!masT) periStr=`There was ${hl('no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS)')}.`;
+            else if(promT&&!masT) periStr=`${promT} was noted, but ${hl('no MAS')} was observed.`;
+            else if(!promT&&masT) periStr=`There was ${hl('no PROM')}, but ${masT} was noted.`;
+            else periStr=`The course was complicated by ${promT} and ${masT}.`;
+            const apS=data.apgar.split(/->|to/).map(s=>s.trim());
+            let apStr=`APGAR scores were ${hl(apS[0]||'?')} and ${hl(apS[1]||'?')} at 1 and 5 minutes, respectively.`;
+            let peDP=[];
+            if(hasRD){const rf=peFindings.find(f=>f.includes('Respiratory distress'));let sy=[];if(rf?.includes('nasal flaring'))sy.push('nasal flaring');if(rf?.includes('retraction'))sy.push('retractions');let rd='respiratory distress';if(sy.length>0)rd+=` with ${sy.join(' and ')}`;peDP.push(`the infant exhibited ${hl(rd)}`);}
+            const otherPE=peFindings.filter(f=>!f.includes('Respiratory distress'));
+            if(otherPE.length>0){const list=otherPE.map(f=>hl(f)).join(', ').replace(/,([^,]*)$/,' and$1');peDP.push(`${list} ${otherPE.length===1?'was':'were'} noted`);}
+            let mskF=[];
+            if(data.ddhPe?.length>0) mskF.push(...data.ddhPe.map(f=>hl(f)));
+            else if(peFindings.some(f=>f.includes('DDH suspect'))) mskF.push(hl('suspected DDH on examination'));
+            if(data.compressionSigns?.length>0) mskF.push(...data.compressionSigns.map(f=>hl(f)));
+            if(mskF.length>0) peDP.push(`musculoskeletal examination was notable for ${mskF.join(', ')}`);
+            let ddhNeg='';
+            const ddhSuspectInPE=peFindings.some(f=>f.includes('DDH suspect'));
+            const ddhPeAllAdm=[...(data.ddhPe||[])];
+            if(ddhSuspectInPE&&ddhPeAllAdm.length===0) ddhPeAllAdm.push('suspected DDH on examination');
+            if(!data.ddhRisk?.length&&!data.compressionSigns?.length&&!ddhPeAllAdm.length) ddhNeg='Screening for DDH risk factors and physical signs was negative.';
+            else if(data.ddhRisk?.length>0){const rL=data.ddhRisk.map(f=>hl(f)).join(', ');if(mskF.length===0&&!ddhPeAllAdm.length)peDP.push(`DDH screening noted risk factors including ${rL}, but physical signs were negative`);else peDP.push(`DDH risk factors including ${rL} were identified`);}
+            let peStr=peDP.length>0?`On physical examination, ${peDP.join('. ')}.`:'Physical examination revealed no gross anomalies.';
+            if(ddhNeg) peStr+=` ${ddhNeg}`;
+
+            // Sepsis workup sentence for admission summary
+            let sepsisStr='';
+            if(document.getElementById('sepsisWorkup').checked){
+                const reasons=Array.from(document.querySelectorAll('input[name="sepsisReason"]:checked')).map(i=>i.value);
+                let reasonParts=[];
+                if(reasons.includes('prom')) reasonParts.push('prolonged PROM (>18 hours)');
+                if(reasons.includes('gbs')) reasonParts.push('GBS colonization with incomplete IAP');
+                if(reasons.includes('fever')) reasonParts.push('neonatal fever');
+                if(reasons.includes('maternal_fever')) reasonParts.push('maternal fever');
+                const reasonText=reasonParts.length>0?joinOxford(reasonParts):'clinical concern for infection';
+                sepsisStr=`Due to ${hl(reasonText)}, a ${hl('sepsis workup including CBC/DC, CRP, and blood culture was performed')}.`;
+            }
+
+            const nbcT=document.getElementById('nbcTransfer').checked, nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
+            const hypo=data.isHighRiskForHypoglycemia?`, with ${hl('blood glucose monitoring for 24 hours')}`:'';
+            let fin='';
+            if(nbcT){
+                if(hasRD&&nbcR==='respiratory') fin=`${hl('Oxygen was administered via O2 hood. However, symptoms persisted')}${hypo}. The infant was subsequently ${hl('transferred to NBC for further evaluation and care')}.`;
+                else if(nbcR==='jaundice') fin=`The infant was admitted to the Baby Room${hypo}. Due to ${hl('progressive jaundice')}, the infant was subsequently ${hl('transferred to NBC for further evaluation and care')}.`;
+                else if(nbcR==='respiratory'&&!hasRD) fin=`The infant was admitted to the Baby Room${hypo}. Due to ${hl('noted tachypnea')}, the infant was subsequently ${hl('transferred to NBC for further evaluation and care')}.`;
+                else fin=`The infant was admitted to the Baby Room${hypo}, and was subsequently ${hl('transferred to NBC for further evaluation and care')}.`;
+            } else {
+                if(hasRD) fin=`${hl('Oxygen was administered via O2 hood, after which the infant remained otherwise stable and was transferred for routine newborn care')}${hypo}.`;
+                else fin=`The infant was admitted to the Baby Room for routine newborn care${hypo}.`;
+            }
+            let mP=''; if(data.motherAge&&data.motherAge!=='?') mP=`${hl(data.motherAge)}-year-old `;
+            mP+=`${hl('G'+(data.g||'?')+'P'+(data.p||'?'))} mother`;
+            const s1=`This 1-day-old ${hl(data.selectedGender)} infant was born to a ${mP} at ${hl(data.ga)} weeks of gestation via ${dStr}${compStr}.`;
+            const s2=`The birth weight was ${hl(data.bw)} gm (${hl(data.aga)}).`;
+            return [s1,s2,matStr,periStr,apStr,peStr,sepsisStr,fin].filter(Boolean).join(' ');
+        }
+
+        // ============================================================
+        // GENERATE CONSULTATION
+        // ============================================================
+        function generateConsultation(data, peFindings) {
+            const pr=data.selectedGender==='male'?'he':'she';
+            const His=data.selectedGender==='male'?'His':'Her';
+            const apS=data.apgar.split(/->|to/).map(s=>s.trim());
+            let dmText=data.deliveryMode==='NSD'?'vaginal delivery':(data.csReason?`${data.csPrefix}cesarean section (due to ${hl(data.csReason)})`:`${data.csPrefix}cesarean section`);
+            if(data.deliveryMode==='NSD'){
+                let dmMods=[];
+                if(data.vacuumMatch) dmMods.push('vacuum-assisted');
+                if(data.forcepsMatch) dmMods.push('forceps-assisted');
+                if(dmMods.length>0) dmText=`${dmMods.join(', ')} vaginal delivery`;
+            }
+
+            // Respiration
+            let respText='Normal';
+            if(peFindings.some(f=>f.includes('Respiratory distress'))){
+                const rf=peFindings.find(f=>f.includes('Respiratory distress'));
+                let sy=[];
+                if(rf.includes('nasal flaring'))sy.push('nasal flaring');
+                if(rf.includes('retraction'))sy.push('suprasternal or subcostal retractions');
+                respText=sy.length>0?hl(sy.join(', ')+'.'):hl('Grunting.');
+            }
+
+            // High-risk flags
+            const gaWeeks=parseInt(data.ga.split('+')[0])||40;
+            const isPrem=gaWeeks<37?'+':'-';
+            const isIugr=data.aga==='SGA'?'+':'-';
+            const hasPE=data.preEclampsia?'+':'-';
+            const hasFD=data.fetalDistress?'+':'-';
+            const promD=data.prom.present?`PROM(+) for ${data.prom.duration} hrs`:'PROM(-)';
+
+            // Maternal serology string
+            const seroEntries=Object.entries(data.serology).filter(([,v])=>v!=='?');
+            let seroStr='not tested';
+            if(seroEntries.length>0) seroStr=seroEntries.map(([k,v])=>`${k}(${hl(v)})`).join(', ');
+
+            // GBS string
+            let gbsStr=data.isGbsPositive?hl(`GBS(+), ${data.gbs.replace('positive, ','').replace('positive ','')}`):hl('GBS(-)');
+
+            // GDM string
+            let gdmStr=data.gdm.includes('No GDM')?hl('GDM(-)')
+                :data.gdm.includes('diet')?hl('GDM(+), diet control')
+                :data.gdm.includes('medication')?hl('GDM(+), medication')
+                :data.gdm.includes('insulin')?hl('GDM(+), insulin')
+                :hl('GDM(+)');
+
+            // Prenatal steroid
+            const steroidStr=gaWeeks<37?hl('[請填寫]'):'nil';
+
+            // Prenatal antibiotics
+            const abx=data.isGbsPositive?`Prenatal antibiotics: ${hl('[請填寫]')}`:'Prenatal antibiotics: nil';
+
+            // Resuscitation - dynamic based on RD
+            const hasRD=peFindings.some(f=>f.includes('Respiratory distress'));
+            const ffo=hasRD?'+':'-';
+            const resuscLine=`Free flow oxygen(${hl(ffo)}), Manual positive pressure ventilation(-), Neopuff (setting)(-), \nIntubation(-), Chest compression(-), UVC(-), Epinephrine(-), NS challenge(-)`;
+
+            // PE findings - show ALL
+            const hasHypotonia=peFindings.some(f=>f.includes('Hypotonia'));
+            const hasCyanosis=peFindings.some(f=>f.includes('Cyanosis'));
+            const cy=hasCyanosis?hl('General cyanosis'):hl('No cyanosis');
+
+            // Other PE findings (excluding the ones already handled inline)
+            const handledPE=['Respiratory distress','Hypotonia','Cyanosis'];
+            const otherFindings=peFindings.filter(f=>!handledPE.some(h=>f.includes(h)));
+            let peSection='';
+            if(otherFindings.length>0){
+                const fList=otherFindings.map(f=>f.toLowerCase());
+                peSection=`\n${His} physical examination was also notable for ${hl(joinOxford(fList))}.`;
+            }
+
+            // Disposition - BR vs NBC
+            const nbcT=document.getElementById('nbcTransfer').checked;
+            const nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
+            let disposition='';
+            if(nbcT){
+                if(nbcR==='respiratory') disposition=`Therefore, ${pr} was transferred to ${hl('NBC')} for further evaluation and treatment due to ${hl('persistent respiratory symptoms')}.`;
+                else if(nbcR==='jaundice') disposition=`Therefore, ${pr} was transferred to ${hl('NBC')} for further evaluation and treatment due to ${hl('progressive jaundice')}.`;
+                else disposition=`Therefore, ${pr} was transferred to ${hl('NBC')} for further evaluation and treatment.`;
+            } else {
+                disposition=`Therefore, ${pr} was transferred to BR for further evaluation and treatment.`;
+            }
+
+            let t=`Dear Dr,
+The neonatal resuscitation team attendance at delivery was requested by obstetrician because of high-risk pregnancy with prematurity(${isPrem}), fetal distress(${hasFD}), maternal preeclampsia(${hl(hasPE)}), IUGR(${isIugr}), ${hl(promD)}.
+
+@ Maternal condition: G${hl(data.g||'?')} P${hl(data.p||'?')} A${hl(data.a||'?')}, GA at ${hl(data.ga)} wks, ${hl(data.motherAge)} y/o mother
+Maternal blood type: ${hl(data.bloodGroup)}
+Serology: ${seroStr}
+GBS: ${gbsStr}
+GDM: ${gdmStr}
+Prenatal steroid use: ${steroidStr}
+${abx}
+
+@ Newborn's condition: GA ${hl(data.ga)} weeks, BW ${hl(data.bw)} gm, ${hl(data.aga)}, ${hl(data.selectedGender)} neonate, born via ${hl(dmText)}
+Apgar score: ${hl(apS[0]||'?')} (1分鐘) to ${hl(apS[1]||'?')} (5分鐘).
+Activity: ${hasHypotonia?hl('not doing well'):'fair'}. Muscle tone: ${hasHypotonia?hl('decreased'):'normal'}. ${cy}.
+Respiration: ${respText}${peSection}
+
+High risk neonatal critical care:
+${resuscLine}
+
+${disposition}`;
+            return t.replace(/\n/g,'<br>');
+        }
+
+        // ============================================================
+        // GENERATE DISCHARGE SUMMARY
+        // ============================================================
+        function generateDischargeSummary(data, peFindings) {
+            const hasRD=peFindings.some(f=>f.includes('Respiratory distress'));
+            const hasCap=document.getElementById('peCaput')?.checked;
+            const nbcT=document.getElementById('nbcTransfer').checked, nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
+            let promDV=0; if(data.prom.present&&data.prom.duration&&!isNaN(parseInt(data.prom.duration))) promDV=parseInt(data.prom.duration);
+            const needsHBIG=data.serology.HBsAg==='+'||data.serology.HBeAg==='+';
+            let parts=[];
+            let proph="HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM)";
+            if(needsHBIG) proph+=`, plus ${hl('HBIG (IM)')}`;
+            parts.push(`Upon admission, the infant received routine prophylaxis including ${proph}.`);
+            let cc=[];
+            if(hasRD){const rf=peFindings.find(f=>f.includes('Respiratory distress'));let sy=[];if(rf?.includes('nasal flaring'))sy.push('nasal flaring');if(rf?.includes('retraction'))sy.push('subcostal retraction');const sT=sy.length>0?`mild shortness of breath accompanied by ${sy.join(' and ')}`:'mild respiratory distress';if(nbcT&&nbcR==='respiratory')cc.push(`Regarding respiratory status, due to ${hl(sT)}, an ${hl('O2 hood was provided')}. However, ${hl('the symptoms persisted')}.`);else cc.push(`Regarding respiratory status, due to ${hl(sT)}, an ${hl('O2 hood was provided with good response')}. The infant was subsequently ${hl('weaned to room air')} and remained stable.`);}
+            // Sepsis workup - unified, driven by checkbox
+            if(document.getElementById('sepsisWorkup').checked){
+                const sReasons=Array.from(document.querySelectorAll('input[name="sepsisReason"]:checked')).map(i=>i.value);
+                let sRP=[];
+                if(sReasons.includes('prom')) sRP.push('prolonged PROM (>18 hours)');
+                if(sReasons.includes('gbs')) sRP.push('GBS colonization with incomplete IAP');
+                if(sReasons.includes('fever')) sRP.push('neonatal fever');
+                if(sReasons.includes('maternal_fever')) sRP.push('maternal fever');
+                const sRT=sRP.length>0?joinOxford(sRP):'clinical concern for infection';
+                cc.push(`Due to ${hl(sRT)}, a ${hl('sepsis workup including CBC/DC, CRP, and blood culture was performed')}. The ${hl('laboratory results were within normal limits')}.`);
+            }
+            const hasCeph=peFindings.some(f=>f.includes('Cephalohematoma'));
+            const caputHC=hasCap&&document.querySelector('#caputDetails input[name="caputDetail"]:checked');
+            const cephHC=hasCeph&&document.querySelector('#cephDetails input[name="cephDetail"]:checked');
+            if(caputHC||cephHC) {
+                const dxParts=[];
+                if(caputHC) dxParts.push('caput succedaneum');
+                if(cephHC) dxParts.push('cephalohematoma');
+                const dx=dxParts.join(' and ');
+                cc.push(`Due to the presence of ${hl(dx)}, head circumference was monitored ${hl('every 2 hours (Q2H) for the first day, followed by daily (QD) measurements until discharge')}. ${hl('No significant interval increase was observed')}.`);
+            }
+            if(peFindings.some(f=>f.includes('Fever'))) cc.push(`The infant developed ${hl('fever')} during the hospital course, which ${hl('resolved without intervention')}.`);
+            // DDH — three-branch logic with DDH suspect fallback
+            const hasRiskFactors=data.ddhRisk?.length>0||data.compressionSigns?.length>0;
+            const ddhSuspectChecked=peFindings.some(f=>f.includes('DDH suspect'));
+            const ddhPeAll=[...(data.ddhPe||[])];
+            if(ddhSuspectChecked&&ddhPeAll.length===0) ddhPeAll.push('suspected DDH on examination');
+            const hasDdhPePos=ddhPeAll.length>0;
+            if(hasRiskFactors||hasDdhPePos){
+                const allRF=[...(data.ddhRisk||[]),...(data.compressionSigns||[])];
+                const rfStr=allRF.length>0?joinOxford(allRF.map(f=>hl(f))):'';
+                if(hasRiskFactors&&hasDdhPePos){
+                    const peStr=joinOxford(ddhPeAll.map(f=>hl(f)));
+                    cc.push(`Due to identified DDH risk factors including ${rfStr}, as well as ${peStr}, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
+                } else if(hasDdhPePos){
+                    const peStr=joinOxford(ddhPeAll.map(f=>hl(f)));
+                    cc.push(`Due to ${peStr} on physical examination, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
+                } else if(allRF.length>0){
+                    cc.push(`Due to identified DDH risk factors including ${rfStr}, DDH screening was performed; however, ${hl('physical examination of the hips was unremarkable')}.`);
+                }
+            }
+            if(data.isHighRiskForHypoglycemia) cc.push(hl("Blood glucose levels were monitored per protocol and remained within normal limits."));
+            // UDT education
+            const udtPE=peFindings.find(f=>f.includes('Undescended testis'));
+            if(udtPE){
+                const sideM=udtPE.match(/\((lt|rt|bilateral)\)/i);
+                const sideStr=sideM?(sideM[1].toLowerCase()==='bilateral'?'bilateral':sideM[1].toLowerCase()==='lt'?'left':'right'):'';
+                const udtDesc=sideStr==='bilateral'?'bilateral undescended testes':(sideStr?sideStr+' ':'')+'undescended testis';
+                cc.push(hl(`The infant was noted to have ${udtDesc}. Caregivers were counseled regarding the condition and the importance of regular follow-up with pediatric surgery or urology to monitor testicular position and determine whether surgical correction is necessary. Potential complications, including infertility, testicular torsion, and increased risk of malignancy, were discussed. Caregivers were advised to observe for scrotal swelling, redness, or pain and to seek medical attention promptly if these occur. Caregivers verbalized understanding of the condition and follow-up plan.`));
+            }
+            if(cc.length>0) parts.push(cc.join(" "));
+            if(nbcT){
+                let care='';
+                if(nbcR==='respiratory'){care=hasRD?`Consequently, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`:`Due to ${hl('persistent tachypnea')}, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`;}
+                else if(nbcR==='jaundice') care=`Due to ${hl('noted jaundice and surging bilirubin levels')}, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`;
+                else care=`The infant was ${hl('admitted to the NBC for further evaluation and care')}.`;
+                parts.push(care);
+                parts.push("Feeding volume was gradually increased as tolerated.");
+            } else {
+                let care="The infant was managed with routine nursery care";
+                care+=hasRD?", and rooming-in with the mother was initiated after respiratory stabilization.":" and rooming-in was arranged with the mother.";
+                parts.push(care);
+                parts.push("Feeding volume was gradually increased as tolerated.");
+                parts.push("<br><br>");
+                parts.push("Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.");
+            }
+            return parts.join(' ');
+        }
+
+        // ============================================================
+        // GENERATE DIAGNOSIS
+        // ============================================================
+        function generateDiagnosis(data, peFindings) {
+            const lines = [];
+            // Line 1: always present
+            const termStr = (parseInt(data.ga.split('+')[0])||40) < 37 ? 'Preterm' : 'Term';
+            lines.push(`# ${termStr} infant, gestational age ${data.ga} weeks, BW ${data.bw} gm, ${data.aga}`);
+
+            // PE-based diagnoses with proper clinical naming
+            const dxMap = {
+                'Jaundice': 'Neonatal jaundice',
+                'Respiratory distress': 'Respiratory distress',
+                'Cyanosis': 'Cyanosis',
+                'Pale': 'Pallor',
+                'Fever': 'Neonatal fever',
+                'Caput succedaneum': 'Caput succedaneum',
+                'Cephalohematoma': 'Cephalohematoma',
+                'Molding': 'Molding',
+                'Craniotabes': 'Craniotabes',
+                'Heart murmur': 'Heart murmur',
+                'Abdominal distension': 'Abdominal distension',
+                'Umbilical hernia': 'Umbilical hernia',
+                'Undescended testis': 'Undescended testis',
+                'Inguinal hernia': 'Inguinal hernia',
+                'Hypospadias': 'Hypospadias',
+                'Hydrocele': 'Hydrocele',
+                'Clavicle fracture': 'Clavicle fracture',
+                'DDH suspect': 'Suspected developmental dysplasia of the hip (DDH)',
+                'Sacral dimples': 'Sacral dimple',
+                'Hypotonia': 'Hypotonia',
+                'Jitteriness': 'Jitteriness',
+                'Forceps/vaccum impression': 'Forceps/vacuum impression',
+                'Hemangioma': 'Hemangioma',
+                'Mongolian spots': 'Mongolian spots',
+                'Skin rash/pigmentation': 'Skin rash/pigmentation',
+                'Erythema toxicum': 'Erythema toxicum',
+            };
+            peFindings.forEach(f => {
+                for (const [key, dx] of Object.entries(dxMap)) {
+                    if (f.includes(key)) {
+                        // Append side/detail info if present
+                        let detail = '';
+                        const sideMatch = f.match(/\((lt|rt|bilateral)\)/i);
+                        if (sideMatch) detail = `, ${sideMatch[1]}`;
+                        lines.push(`# ${dx}${detail}`);
+                        break;
+                    }
+                }
+            });
+
+            // Maternal/clinical condition-based diagnoses
+            if (data.gdm && !data.gdm.includes('No GDM')) {
+                lines.push(`# Infant of diabetic mother`);
+            }
+            if (data.serology.HBsAg === '+' || data.serology.HBeAg === '+') {
+                lines.push(`# Infant of HBV carrier mother`);
+            }
+            if (data.prom.present && data.prom.duration && parseInt(data.prom.duration) > 18) {
+                lines.push(`# Prolonged rupture of membranes`);
+            }
+            if (data.isGbsPositive) {
+                if (data.gbs.includes('complete IAP') && !data.gbs.includes('incomplete')) {
+                    lines.push(`# Maternal GBS positive with adequate intrapartum antibiotic prophylaxis (IAP) completed`);
+                } else if (data.gbs.includes('incomplete')) {
+                    lines.push(`# Maternal GBS positive without adequate intrapartum antibiotic prophylaxis (IAP)`);
+                } else {
+                    lines.push(`# Maternal GBS positive`);
+                }
+            }
+            const nbcT = document.getElementById('nbcTransfer').checked;
+            const nbcR = document.querySelector('input[name="nbcReason"]:checked')?.value;
+            if (nbcT && nbcR === 'jaundice') {
+                if (!peFindings.some(f => f.includes('Jaundice'))) {
+                    lines.push(`# Neonatal jaundice`);
+                }
+            }
+            // Sepsis workup
+            if (document.getElementById('sepsisWorkup').checked) {
+                lines.push(`# Rule out neonatal sepsis`);
+            }
+
+            return lines.map(l => hl(l)).join('<br>');
+        }
+
+        // ============================================================
+        // PARSE STATUS BAR
+        // ============================================================
+        function updateParseStatus(data) {
+            if(!data){DOM.parseStatus.innerHTML='';return;}
+            const fields=[
+                {label:'GA',val:data.ga,ok:data.ga!=='?'},
+                {label:'BW',val:data.bw,ok:data.bw!=='?'},
+                {label:'G/P/A',val:`G${data.g}P${data.p}A${data.a}`,ok:data.g!=='?'},
+                {label:'APGAR',val:data.apgar.replace(/ /g,''),ok:!data.apgar.includes('?')},
+                {label:'Blood',val:data.bloodGroup,ok:!data.bloodGroup.startsWith('?')},
+                {label:'Delivery',val:data.deliveryMode,ok:data.deliveryMode!=='?'},
+                {label:'GBS',val:data.isGbsPositive?'+':'-',ok:true},
+                {label:'GDM',val:data.gdm.includes('No')?'-':'+',ok:true},
+                {label:'PROM',val:data.prom.present?`+${data.prom.duration}h`:'-',ok:true},
+            ];
+            DOM.parseStatus.innerHTML=fields.map(f=>`<span class="parse-badge ${f.ok?'parse-ok':'parse-warn'}">${f.label}: ${f.val} ${f.ok?'✓':'⚠'}</span>`).join('');
+        }
+
+        // ============================================================
+        // UI UPDATE
+        // ============================================================
+        function updateUI() {
+            const inputText=DOM.inputData.value;
+            const effective=inputText.trim()===''?DOM.inputData.placeholder:inputText;
+            if(!effective.trim()){
+                const ph='<span class="text-slate-400">請在左側貼上資料。</span>';
+                DOM.outputSummary.innerHTML=ph;DOM.consultOutput.innerHTML=ph;DOM.dischargeOutput.innerHTML=ph;DOM.diagnosisOutput.innerHTML=ph;
+                updateParseStatus(null);return;
+            }
+            try{
+                const pd=parseInputData(effective);
+                if(pd.genderDetected&&!genderManuallySet) document.getElementById(pd.genderDetected==='male'?'genderMale':'genderFemale').checked=true;
+
+                // Auto-check sepsis workup based on parsed data
+                if(!sepsisManuallyUnchecked){
+                    const promDV=pd.prom.present&&pd.prom.duration?parseInt(pd.prom.duration):0;
+                    const needsSepsis=(promDV>18)||(pd.isGbsPositive&&pd.gbs.includes('incomplete'));
+                    if(needsSepsis&&!DOM.sepsisWorkup.checked){
+                        DOM.sepsisWorkup.checked=true;
+                        DOM.sepsisReasons.classList.remove('hidden');
+                    }
+                    // Auto-check corresponding reasons
+                    if(promDV>18) document.querySelector('input[name="sepsisReason"][value="prom"]').checked=true;
+                    if(pd.isGbsPositive&&pd.gbs.includes('incomplete')) document.querySelector('input[name="sepsisReason"][value="gbs"]').checked=true;
+                }
+
+                const pe=getPEFindings();
+                DOM.outputSummary.innerHTML=generateSummary(pd,pe);
+                DOM.consultOutput.innerHTML=generateConsultation(pd,pe);
+                DOM.dischargeOutput.innerHTML=generateDischargeSummary(pd,pe);
+                DOM.diagnosisOutput.innerHTML=generateDiagnosis(pd,pe);
+                updateParseStatus(pd);
+            }catch(e){
+                console.error("Parse error:",e);
+                const msg='<span class="text-red-400">資料格式無法解析，請檢查輸入。</span>';
+                DOM.outputSummary.innerHTML=msg;DOM.consultOutput.innerHTML=msg;DOM.dischargeOutput.innerHTML=msg;DOM.diagnosisOutput.innerHTML=msg;
+                updateParseStatus(null);
+            }
+        }
+
+        // ============================================================
+        // RESET
+        // ============================================================
+        function resetAll() {
+            DOM.inputData.value='';
+            document.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
+            document.querySelectorAll('input[type="radio"]').forEach(r=>r.checked=false);
+            document.getElementById('genderFemale').checked=true;
+            genderManuallySet=false;
+            ['respDistressDetails','udtDetails','herniaDetails','caputDetails','cephDetails','nbcReasons','sepsisReasons'].forEach(id=>document.getElementById(id)?.classList.add('hidden'));
+            sepsisManuallyUnchecked=false;
+            const ph='<span class="text-slate-400">請在左側貼上資料。</span>';
+            DOM.outputSummary.innerHTML=ph;DOM.consultOutput.innerHTML=ph;DOM.dischargeOutput.innerHTML=ph;DOM.diagnosisOutput.innerHTML=ph;
+            updateParseStatus(null);
+            switchTab('diagnosis');
+            DOM.inputData.focus();
+        }
+
+        // ============================================================
+        // CLIPBOARD
+        // ============================================================
+        async function copyToClipboard(el,btn){
+            const txt=el.innerText;if(!txt)return;
+            const orig=btn.textContent;
+            try{
+                let copied=false;
+                if(navigator.clipboard?.writeText){
+                    try{await navigator.clipboard.writeText(txt);copied=true;}catch(e){copied=false;}
+                }
+                if(!copied){
+                    const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;left:-9999px;top:0';document.body.appendChild(ta);ta.focus();ta.select();document.execCommand('copy');document.body.removeChild(ta);
+                }
+                btn.textContent='已複製！';
+            }catch(e){console.error('Copy failed:',e);btn.textContent='複製失敗';}
+            setTimeout(()=>{btn.textContent=orig;},1500);
+        }
+        function copyActiveTabContent(){
+            const map={summary:DOM.outputSummary,consult:DOM.consultOutput,discharge:DOM.dischargeOutput,diagnosis:DOM.diagnosisOutput};
+            copyToClipboard(map[activeTab],DOM.copyActiveBtn);
+        }
+
+        // ============================================================
+        // EVENTS
+        // ============================================================
+        const debouncedUpdateUI=debounce(updateUI,300);
+        function setupConditionalCheckboxes(){
+            const setup=(cbId,divId)=>{const cb=document.getElementById(cbId),div=document.getElementById(divId);if(!cb||!div)return;cb.addEventListener('change',e=>{div.classList.toggle('hidden',!e.target.checked);if(!e.target.checked)div.querySelectorAll('input').forEach(i=>i.checked=false);updateUI();});};
+            setup('peRespDistress','respDistressDetails');setup('peUDT','udtDetails');setup('peHernia','herniaDetails');setup('peCaput','caputDetails');setup('peCeph','cephDetails');
+            DOM.nbcTransfer.addEventListener('change',e=>{DOM.nbcReasons.classList.toggle('hidden',!e.target.checked);if(!e.target.checked)DOM.nbcReasons.querySelectorAll('input').forEach(i=>i.checked=false);updateUI();});
+            // Sepsis workup toggle
+            DOM.sepsisWorkup.addEventListener('change',e=>{
+                DOM.sepsisReasons.classList.toggle('hidden',!e.target.checked);
+                if(!e.target.checked){DOM.sepsisReasons.querySelectorAll('input').forEach(i=>i.checked=false);sepsisManuallyUnchecked=true;}
+                else{sepsisManuallyUnchecked=false;}
+                updateUI();
+            });
+        }
+        DOM.openLogBtn.onclick=()=>DOM.logModal.classList.remove('hidden');
+        DOM.closeLogBtn.onclick=()=>DOM.logModal.classList.add('hidden');
+        window.onclick=e=>{if(e.target===DOM.logModal)DOM.logModal.classList.add('hidden');};
+        DOM.genderRadios.forEach(r=>r.addEventListener('change',()=>{genderManuallySet=true;updateUI();}));
+        function bindEvents(){
+            document.querySelectorAll('input[name="peFinding"],input[name="respSymptom"],input[name="udtSide"],input[name="herniaSide"],input[name="caputDetail"],input[name="cephDetail"]').forEach(i=>i.addEventListener('change',updateUI));
+            document.querySelectorAll('#peRespDistress,#peUDT,#peHernia,#peCaput,#peCeph').forEach(i=>i.addEventListener('change',updateUI));
+            DOM.nbcReasonRadios.forEach(i=>i.addEventListener('change',updateUI));
+            DOM.sepsisReasonCbs.forEach(i=>i.addEventListener('change',updateUI));
+            DOM.inputData.addEventListener('input',debouncedUpdateUI);
+            DOM.copyActiveBtn.addEventListener('click',copyActiveTabContent);
+            DOM.resetBtn.addEventListener('click',resetAll);
+        }
+        window.addEventListener('load',()=>{setupConditionalCheckboxes();bindEvents();switchTab('diagnosis');updateUI();});
+    </script>
+</body>
+</html>
