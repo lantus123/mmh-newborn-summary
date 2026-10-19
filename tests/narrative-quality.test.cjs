@@ -1,7 +1,9 @@
 'use strict';
 
 // Synthetic narrative acceptance. Existing tests cover parser formats; these
-// cases protect source-grounded prose, clinical sequence and the copy boundary.
+// cases protect explicit source meaning, clinical sequence and the copy boundary.
+// The user restored the original BR discharge defaults and selected-care prose;
+// admission remains source-grounded and discharge must honor explicit exceptions.
 // Exact sentence wording is intentionally not snapshotted. Fluency still needs
 // a separate reading of the complete rendered notes.
 const test = require('node:test');
@@ -117,7 +119,7 @@ function assertEmptyReview(app) {
 test('DN-01: complete course preserves timed observations, treatment, outcomes and final disposition in clinical paragraphs', () => {
   const { html, bodies, reviews } = specimen(sources.complete);
   const body = bodies.discharge;
-  for (const fact of [/3200\s*(?:g|gm|grams)/i, /18\.2 mg\/dL/i, /11\.0 mg\/dL/i,
+  for (const fact of [/18\.2 mg\/dL/i, /11\.0 mg\/dL/i,
     /jaundice[^.\n]{0,70}48 hours of age/i,
     /phototherapy[^.\n]{0,50}started at 50 hours[^.\n]{0,50}stopped at 74 hours/i,
     /11\.0 mg\/dL at 74 hours/i, /feeding was well tolerated/i,
@@ -125,12 +127,20 @@ test('DN-01: complete course preserves timed observations, treatment, outcomes a
     /stable[^.\n]{0,40}80 hours/i, /2026-10-26/]) {
     assert.match(body, fact, `preserve documented fact ${fact}`);
   }
-  assert.match(body, /positive pressure ventilation\s*(?:\(-\)|was not (?:provided|performed))/i);
-  assert.match(body, /intubation\s*(?:\(-\)|was not (?:provided|performed))/i);
-  inOrder(body, [/3200/i, /positive pressure ventilation/i, /jaundice[^.\n]{0,70}48 hours/i,
+  for (const name of ['summary', 'consultation']) {
+    assert.match(bodies[name], /3200\s*(?:g|gm|grams)/i, `${name}: birth weight remains available`);
+    // This fixture places untimed resuscitation below a later-timed PE. The
+    // unchanged admission scope retains that full line in its review region.
+    const perinatalTrace = `${bodies[name]} ${reviews[name] || ''}`;
+    assert.match(perinatalTrace, /positive pressure ventilation\s*(?:\(-\)|was not (?:provided|performed))/i);
+    assert.match(perinatalTrace, /intubation\s*(?:\(-\)|was not (?:provided|performed))/i);
+  }
+  assert.doesNotMatch(body, /3200\s*(?:g|gm|grams)|positive pressure ventilation|intubation|maternal blood group/i,
+    'restored discharge style does not repeat birth, maternal or delivery-room history');
+  inOrder(body, [/jaundice[^.\n]{0,70}48 hours/i,
     /18\.2 mg\/dL/i, /phototherapy/i, /11\.0 mg\/dL/i,
     /caregivers were counseled/i, /80 hours/i, /2026-10-26/], 'full-course chronology');
-  assert.ok(paragraphs(html.discharge).length >= 3, 'a multi-phase course needs separate readable paragraphs');
+  assert.ok(paragraphs(html.discharge).length >= 2, 'the original course and discharge ending remain readable as separate paragraphs');
   assert.match(paragraphs(html.discharge).at(-1), /80 hours[^\n]*2026-10-26/i, 'documented discharge and follow-up close the note');
   assert.doesNotMatch(body, /(?:at birth|on admission)[^.\n]{0,40}jaundice|jaundice[^.\n]{0,40}(?:at birth|on admission)/i);
   assert.doesNotMatch(body, /physiologic(?:al)? jaundice|hemolytic|ABO incompatibility|breast milk jaundice|therefore|consequently|as a result|due to|because|resulted in|led to/i);
@@ -138,23 +148,27 @@ test('DN-01: complete course preserves timed observations, treatment, outcomes a
   assert.doesNotMatch(reviews.discharge, /尚未提供完整住院經過|尚未提供出院狀態|(?:course|discharge)[^.]*not documented/i, 'completed supplied course is not downgraded to missing');
 });
 
-test('DN-02: birth-only prose stays factual and moves missing course/discharge prompts outside both copied narratives', () => {
+test('DN-02: birth-only input preserves admission facts and restores a complete routine BR discharge without extra data prompts', () => {
   const { bodies, reviews } = specimen(sources.sparse);
+  for (const fact of [/male/i, /39/, /3200/, /AGA|appropriate for gestational age/i, /NSD|(?:spontaneous )?vaginal delivery/i]) {
+    assert.match(bodies.summary, fact);
+  }
   for (const name of Object.keys(REVIEW_IDS)) {
     const body = bodies[name];
-    assert.match(body, /male/i);
-    assert.match(body, /39/);
-    assert.match(body, /3200/);
-    assert.match(body, /AGA|appropriate for gestational age/i);
-    assert.match(body, /NSD|(?:spontaneous )?vaginal delivery/i);
     assert.doesNotMatch(body, /G\?P\?|not documented|not recorded|unknown|not separately specified|require confirmation|待確認|未記錄|尚未提供/i, `${name}: ordinary omissions belong in review`);
-    assert.doesNotMatch(body, /routine (?:care|prophylaxis)|vitamin K|HBIG|HBV vaccine|blood culture|normal (?:exam|examination)|feeding was (?:well tolerated|adequate)|tolerated feeding/i);
-    assert.doesNotMatch(body, INVENTED_OUTCOME, `${name}: no unsupported course or closure`);
     assert.doesNotMatch(body, GENERATED_PLANS);
   }
-  assert.match(reviews.discharge, /BR 照護|離室前觀察/i);
-  assert.doesNotMatch(reviews.discharge, /完整住院經過|治療反應/i);
-  assert.match(reviews.discharge, /出院|discharg/i);
+  assert.doesNotMatch(bodies.summary, /routine (?:care|prophylaxis)|vitamin K|HBIG|HBV vaccine|blood culture|normal (?:exam|examination)|feeding was (?:well tolerated|adequate)|tolerated feeding/i);
+  assert.doesNotMatch(bodies.summary, INVENTED_OUTCOME, 'discharge restoration does not change the admission contract');
+  assert.doesNotMatch(bodies.discharge, /39\+0|3200|AGA|vaginal delivery|NSD/i);
+  for (const part of [/^Upon admission, the infant received routine prophylaxis/i, /HBV vaccine \(IM\)/i,
+    /tetracycline ophthalmic ointment/i, /Vitamin K1 \(IM\)/i, /routine nursery care/i,
+    /rooming-in[^.]*mother/i, /Feeding volume was gradually increased as tolerated/i,
+    /bilirubin[^.]*within normal limits/i, /discharged in stable condition/i, /MBD and OPD follow-up/i]) {
+    assert.match(bodies.discharge, part, `original routine BR sentence: ${part}`);
+  }
+  assert.notEqual(bodies.summary, bodies.discharge);
+  assert.equal(reviews.discharge, '', 'source-only missing-care prompts are removed from the restored workflow');
 });
 
 test('DN-03: documented negatives, pending/declined care and source plans remain distinct from UI-selected plans', () => {
@@ -174,22 +188,35 @@ test('DN-03: documented negatives, pending/declined care and source plans remain
     assert.match(care, /CPAP\s+(?:was\s+)?planned,?\s*not started/i);
     if(name === 'summary') assert.doesNotMatch(body, /HBIG|HBV vaccine|CPAP/i);
     assert.doesNotMatch(body, GENERATED_PLANS, `${name}: control selections are outside copied prose`);
-    assert.match(reviews[name], /Sepsis evaluation plan selected/i);
-    assert.match(reviews[name], /Selected transfer plan:\s*NBC/i);
-    assert.doesNotMatch(body, /CPAP was (?:provided|started)|HBIG was (?:given|administered)|received HBV vaccine|blood culture was performed|was transferred to|O2 hood was provided/i);
-    assert.doesNotMatch(body, INVENTED_OUTCOME);
+    if (name === 'summary') {
+      assert.match(reviews[name], /Sepsis evaluation plan selected/i);
+      assert.match(reviews[name], /Selected transfer plan:\s*NBC/i);
+      assert.doesNotMatch(body, /blood culture was performed|was transferred to/i);
+      assert.doesNotMatch(body, INVENTED_OUTCOME);
+    } else {
+      assert.equal(reviews[name], '');
+      assert.match(body, /blood culture was performed/i, 'the explicitly selected original sepsis template is restored');
+    }
+    assert.doesNotMatch(body, /CPAP was (?:provided|started)|HBIG was (?:given|administered)|received HBV vaccine|O2 hood was provided|good response|weaned to room air/i,
+      'explicit pending/declined source overrides the corresponding default or selected treatment');
   }
 });
 
 test('DN-04: unknown and conflicting evidence stays traceable, and actual PE disagreement stays in copied prose', () => {
-  const { bodies, reviews } = specimen(sources.conflicts, ['Heart murmur']);
-  for (const name of Object.keys(REVIEW_IDS)) {
-    const body = bodies[name];
-    const trace = `${body} ${reviews[name]}`.replace(/\s+/g, ' ');
+  const { data, bodies, reviews } = specimen(sources.conflicts, ['Heart murmur']);
+  assert.equal(data.gdmStatus, 'unknown');
+  assert.equal(data.gbsStatus, 'conflict');
+  for (const name of ['summary', 'consultation']) {
+    const trace = `${bodies[name]} ${reviews[name] || ''}`.replace(/\s+/g, ' ');
     assert.match(trace, /(?:GDM|gestational diabetes)[^.]{0,120}(?:unknown|uncertain|unresolved|待確認|未明)/i);
     assert.match(trace, /GBS[^.]{0,120}(?:\(\+\)|positive)|positive[^.]{0,60}GBS/i);
     assert.match(trace, /GBS[^.]{0,120}(?:\(-\)|negative)|negative[^.]{0,60}GBS/i);
     assert.match(trace, /GBS[^.]{0,180}(?:conflict|discordant|inconsistent|unresolved|衝突)|(?:conflict|discordant|inconsistent|衝突)[^.]{0,180}GBS/i);
+  }
+  assert.doesNotMatch(bodies.discharge, /GDM|gestational diabetes|GBS\(\+\)|GBS\(-\)/i,
+    'maternal uncertainty remains available in maternal documents without duplicating their paragraphs in discharge');
+  for (const name of Object.keys(REVIEW_IDS)) {
+    const body = bodies[name];
     assert.match(body, /Heart murmur\(-\)/i, `${name}: conflicting source is available when copied`);
     assert.match(body, PE_CONFLICT);
     assert.match(body, /manual selection indicates presence/i);
@@ -198,15 +225,17 @@ test('DN-04: unknown and conflicting evidence stays traceable, and actual PE dis
   }
 });
 
-test('DN-05: documented CPAP initiation is retained without inventing a treatment response or discharge', () => {
+test('DN-05: documented CPAP overrides the respiratory template without inventing a treatment response', () => {
   const { bodies, reviews } = specimen(sources.treatmentOnly, ['Respiratory distress']);
   const body = bodies.discharge;
   assert.match(body, /CPAP\s+(?:was\s+)?started at 2 hours of age/i);
   assert.match(body, /respiratory distress/i);
   assert.doesNotMatch(body, /CPAP\s+(?:was\s+)?(?:planned|considered|suggested)|CPAP[^.]*not started/i);
-  assert.doesNotMatch(body, INVENTED_OUTCOME);
+  assert.doesNotMatch(body, /O2 hood|good response|responded (?:well|favorably)|symptoms? (?:improved|resolved)|distress (?:improved|resolved)|wean(?:ed|ing)|room air/i);
   assert.doesNotMatch(body, /secondary to|due to|diagnosed with|therefore|as a result|not documented|尚未提供|待確認/i);
-  assert.match(reviews.discharge, /出院|discharg/i, 'the undocumented disposition is a review item');
+  assert.doesNotMatch(body, /was discharged|stable condition/i,
+    'an unfinished supplied respiratory-support course is not replaced by the routine completed-course ending');
+  assert.equal(reviews.discharge, '');
 });
 
 test('DN-06: richer source PE and embedded treatment/lab facts survive paragraph reorganization exactly once', () => {
@@ -221,9 +250,9 @@ test('DN-06: richer source PE and embedded treatment/lab facts survive paragraph
     exactlyOnce(care, /28 mg\/dL/g, `${name}: retain blood glucose once in its document region`);
     assert.match(care, /blood glucose[^.\n]{0,30}28 mg\/dL/i);
     if(name === 'summary') assert.doesNotMatch(body, /CPAP|28 mg\/dL/);
-    const exam = paragraphs(html[name]).find(paragraph => /heart murmur/i.test(paragraph));
-    assert.ok(exam, `${name}: an examination paragraph exists`);
-    assert.doesNotMatch(exam, /CPAP|28 mg\/dL/, `${name}: treatment and lab values are not cast as physical signs`);
+    const exam = body.match(/[^.!?\n]*heart murmur[^.!?\n]*[.!?]?/i)?.[0];
+    assert.ok(exam, `${name}: an examination sentence exists`);
+    assert.doesNotMatch(exam, /CPAP|28 mg\/dL/, `${name}: treatment and lab values are not cast as physical signs in the examination sentence`);
     assert.doesNotMatch(body, /(?:treatment|laboratory|blood glucose)[^.]*not documented|normal blood glucose|blood glucose[^.]*normal|PE source conflict/i);
   }
 });
@@ -235,7 +264,8 @@ test('DN-07: explicit single day-N events are ordered, with discharge/follow-up 
   assert.match(body, /blood culture\s+(?:was\s+)?positive for E\. coli on day 2/i);
   assert.match(body, /feeding was well tolerated on day 3/i);
   assert.match(body, /stable[^.\n]{0,30}on day 4/i);
-  inOrder(body, [/3200/i, /ampicillin/i, /blood culture/i, /feeding was well tolerated/i, /on day 4/i, /2026-10-26/], 'single-scale dated chronology');
+  assert.doesNotMatch(body, /3200|39\+0|G1\s*P1|APGAR/i);
+  inOrder(body, [/ampicillin/i, /blood culture/i, /feeding was well tolerated/i, /on day 4/i, /2026-10-26/], 'single-scale dated chronology');
   assert.match(paragraphs(html.discharge).at(-1), /on day 4[^\n]*2026-10-26/i);
   assert.doesNotMatch(body, /therefore|consequently|as a result|because|due to|in response to|resulted in|led to|empiric|diagnos(?:ed|is).*sepsis|treated for sepsis/i);
   assert.doesNotMatch(body, GENERATED_PLANS);
@@ -255,7 +285,7 @@ test('NR-01: each review region is a sibling of, and never inside, its copyable 
   }
 });
 
-test('NR-02: actual Copy excludes selected plans/checklists while preserving the raw/manual PE conflict', async () => {
+test('NR-02: actual Copy preserves PE conflicts and includes restored discharge templates while excluding review UI', async () => {
   const app = loadApp();
   const copied = [];
   app.context.navigator.clipboard = { async writeText(text) { copied.push(text); } };
@@ -267,9 +297,13 @@ test('NR-02: actual Copy excludes selected plans/checklists while preserving the
   for (const [name, id] of Object.entries(REVIEW_IDS)) {
     const review = app.document.getElementById(id);
     const body = app.document.getElementById(BODY_IDS[name]);
-    assert.equal(review.classList.contains('hidden'), false, `${name} review is visible`);
-    assert.match(toText(review.innerHTML), /Sepsis evaluation plan selected/i);
-    if (name === 'discharge') assert.match(toText(review.innerHTML), /Counseling checklist/i);
+    if (name === 'summary') {
+      assert.equal(review.classList.contains('hidden'), false, 'admission review is visible');
+      assert.match(toText(review.innerHTML), /Sepsis evaluation plan selected/i);
+    } else {
+      assert.equal(review.classList.contains('hidden'), true, 'restored discharge needs no duplicate plan checklist');
+      assert.equal(review.innerHTML, '');
+    }
     app.context.switchTab(name);
     app.document.getElementById('copyActiveBtn').dispatchEvent({ type: 'click' });
     await delay(0);
@@ -279,6 +313,10 @@ test('NR-02: actual Copy excludes selected plans/checklists while preserving the
     assert.match(text, PE_CONFLICT);
     assert.doesNotMatch(text, GENERATED_PLANS);
     assert.doesNotMatch(text, /待確認事項|已選取的評估|尚未提供/);
+    if (name === 'discharge') {
+      assert.match(text, /blood culture was performed/i);
+      assert.match(text, /Caregivers were counseled/i);
+    } else assert.doesNotMatch(text, /blood culture was performed|Caregivers were counseled/i);
   }
   assert.equal(copied.length, 2, 'both bound Copy actions use the clipboard stub');
   assert.equal(app.errors.length, 0);
@@ -289,7 +327,9 @@ test('NR-03: initial and newly cleared input leave no review residue through the
   app.context.updateUI();
   assertEmptyReview(app);
   await paste(app, `${BASE}\nPROM for 20 hours`);
-  for (const id of Object.values(REVIEW_IDS)) assert.match(toText(app.document.getElementById(id).innerHTML), /Sepsis evaluation plan selected/i);
+  assert.match(toText(app.document.getElementById(REVIEW_IDS.summary).innerHTML), /Sepsis evaluation plan selected/i);
+  assert.equal(app.document.getElementById(REVIEW_IDS.discharge).innerHTML, '');
+  assert.match(toText(app.document.getElementById(BODY_IDS.discharge).innerHTML), /blood culture was performed/i);
   await paste(app, ' \n\t ');
   assertEmptyReview(app);
 });
@@ -298,7 +338,8 @@ test('NR-04: Reset clears populated reviews and keeps them empty after an alread
   const app = loadApp();
   await paste(app, `${BASE}\nPROM for 20 hours`);
   choose(app.document.querySelector('input[name="peFinding"][value="Hydrocele"]'));
-  assert.match(toText(app.document.getElementById('dischargeReview').innerHTML), /Counseling checklist/i);
+  assert.match(toText(app.document.getElementById('dischargeOutput').innerHTML), /Caregivers were counseled/i);
+  assert.equal(app.document.getElementById('dischargeReview').innerHTML, '');
   const input = app.document.getElementById('inputData');
   input.value = sources.conflicts;
   input.dispatchEvent({ type: 'input' });
@@ -313,11 +354,14 @@ test('NR-04: Reset clears populated reviews and keeps them empty after an alread
 test('NR-05: replacement recomputes review plans without carrying over the previous automatic risk', async () => {
   const app = loadApp();
   await paste(app, `${BASE}\nPROM for 20 hours\nGBS(-)\nGDM(-)`);
-  for (const id of Object.values(REVIEW_IDS)) assert.match(toText(app.document.getElementById(id).innerHTML), /Sepsis evaluation plan selected/i);
+  assert.match(toText(app.document.getElementById(REVIEW_IDS.summary).innerHTML), /Sepsis evaluation plan selected/i);
+  assert.match(toText(app.document.getElementById(BODY_IDS.discharge).innerHTML), /Due to prolonged PROM[^]*blood culture was performed/i);
   await paste(app, `${BASE}\nPROM(-)\nGBS(-)\nGDM(-)`);
   for (const [name, id] of Object.entries(REVIEW_IDS)) {
     assert.doesNotMatch(toText(app.document.getElementById(id).innerHTML), /Sepsis evaluation plan selected|prolonged PROM|20 hours/i, `${name} review uses only current automatic evidence`);
     assert.doesNotMatch(toText(app.document.getElementById(BODY_IDS[name]).innerHTML), GENERATED_PLANS);
+    assert.doesNotMatch(toText(app.document.getElementById(BODY_IDS[name]).innerHTML), /Due to prolonged PROM|sepsis workup[^.]*was performed|laboratory results were within normal limits/i,
+      `${name}: old automatic sepsis template is removed when current risk is negative`);
   }
   assert.equal(app.document.getElementById('sepsisWorkup').checked, false);
   assert.equal(app.document.querySelector('input[name="sepsisReason"][value="prom"]').checked, false);

@@ -2,7 +2,8 @@
 
 // Synthetic acceptance for the user-approved BR document scope only.
 // Admission describes birth/perinatal context and the initial BR assessment;
-// discharge describes the supplied BR course and actual discharge arrangement.
+// discharge uses the user's original routine BR template, with supplied BR
+// observations and explicit exceptions overriding the corresponding defaults.
 // Exact wording is not snapshotted. No transfer-workflow feature is tested here.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -49,20 +50,29 @@ function paragraphs(html) {
     .split(/\n\s*\n/).map(value => value.trim()).filter(Boolean);
 }
 
-test('BS-01: birth-only BR notes remain factual; missing discharge data appears only as a review prompt', () => {
+test('BS-01: birth-only input retains admission context and produces the original routine BR discharge template', () => {
   const result = specimen(BASE);
+  preserveBirthContext(result.bodies.summary);
   for (const kind of Object.keys(BODY_IDS)) {
-    preserveBirthContext(result.bodies[kind]);
     assertNoFullInpatientPrompt(`${result.bodies[kind]} ${result.reviews[kind]}`);
-    assert.doesNotMatch(result.bodies[kind], /received.*(?:vitamin K|HBV vaccine)|feeding was well tolerated|discharged|stable condition|uneventful|unremarkable|routine care was provided/i,
-      'a distinct document layout cannot be achieved by inventing a normal course or discharge');
     assert.doesNotMatch(result.bodies[kind], /待確認|尚未提供|not documented|G\?P\?/i,
       'routine missing-data prompts do not become copyable prose');
   }
+  assert.doesNotMatch(result.bodies.summary, /received.*(?:vitamin K|HBV vaccine)|feeding was well tolerated|discharged|stable condition|uneventful|unremarkable|routine care was provided/i,
+    'restoring discharge defaults does not change admission facts');
   assert.match(result.bodies.summary, /G1\s*P1\s*A0/i);
   assert.match(result.bodies.summary, /vaginal delivery|NSD/i);
   assert.match(result.bodies.summary, /APGAR/i);
-  assert.match(result.reviews.discharge, /出院|discharg/i, 'missing actual discharge arrangement is a review item');
+  for (const part of [/^Upon admission, the infant received routine prophylaxis/i, /HBV vaccine \(IM\)/i,
+    /tetracycline ophthalmic ointment/i, /Vitamin K1 \(IM\)/i, /routine nursery care/i,
+    /rooming-in[^.]*mother/i, /Feeding volume was gradually increased as tolerated/i,
+    /bilirubin[^.]*within normal limits/i, /discharged in stable condition/i, /MBD and OPD follow-up/i]) {
+    assert.match(result.bodies.discharge, part, `original routine template restored: ${part}`);
+  }
+  assert.doesNotMatch(result.bodies.discharge, /39\+0|3200|G1\s*P1|APGAR|vaginal delivery|NSD/i,
+    'discharge no longer repeats the admission background');
+  assert.notEqual(result.bodies.summary, result.bodies.discharge, 'even birth-only input has different document purposes');
+  assert.equal(result.reviews.discharge, '', 'the user no longer has to provide a complete BR course to use the original template');
 });
 
 test('BS-02: admission keeps initial BR admission while later nursery course and home discharge remain in review', () => {
@@ -129,7 +139,7 @@ ${HOME}`, ['Heart murmur']);
 
 });
 
-test('BS-06: maternal antibiotics and delivery-room resuscitation remain attributable perinatal facts', () => {
+test('BS-06: maternal antibiotics and delivery-room resuscitation remain in admission and consultation without repeating discharge background', () => {
   const result = specimen(`${BASE}
 Maternal antibiotics: ampicillin 2 g IV before delivery.
 Resuscitation: CPAP for 5 minutes in the delivery room.
@@ -137,13 +147,14 @@ ${BR_ADMISSION}`);
   assert.match(result.bodies.summary, /maternal[^.]*ampicillin[^.]*2 g IV before delivery/i);
   assert.match(result.bodies.summary, /CPAP[^.]*5 minutes[^.]*delivery room/i);
   assert.match(result.bodies.summary, /admitted[^.]*BR/i);
-  for (const kind of Object.keys(BODY_IDS)) {
-    const trace = `${result.bodies[kind]} ${result.reviews[kind]}`;
-    assert.match(trace, /ampicillin[^.]*2 g IV before delivery/i);
-    assert.match(trace, /CPAP[^.]*5 minutes[^.]*delivery room/i);
+  for (const kind of ['summary', 'consultation']) {
+    assert.match(result.bodies[kind], /ampicillin[^.]*2 g IV before delivery/i);
+    assert.match(result.bodies[kind], /CPAP[^.]*5 minutes[^.]*delivery room/i);
     assert.doesNotMatch(result.bodies[kind], /(?:infant|newborn)\s+(?:was given|received)[^.]*ampicillin/i,
       'maternal exposure must not be recast as infant treatment');
   }
+  assert.doesNotMatch(result.bodies.discharge, /ampicillin|before delivery|CPAP|delivery room/i,
+    'the original discharge style does not repeat maternal and delivery-room history');
 });
 
 test('BS-07: explicitly initial BR measurements, treatment and detailed PE remain in the admission body', () => {
@@ -185,7 +196,7 @@ test('BS-09: a future BR discharge plan and conditional counseling remain planne
   }
 });
 
-test('BS-10: bound Copy uses each document body; deferred course, selected plans and Reset respect that boundary', async () => {
+test('BS-10: bound Copy uses each document body; admission review and discharge templates clear completely on Reset', async () => {
   const app = loadApp();
   const copied = [];
   app.context.navigator.clipboard = { async writeText(text) { copied.push(text); } };
@@ -200,8 +211,15 @@ test('BS-10: bound Copy uses each document body; deferred course, selected plans
   for (const kind of Object.keys(BODY_IDS)) {
     const body = app.document.getElementById(BODY_IDS[kind]);
     const review = app.document.getElementById(REVIEW_IDS[kind]);
-    assert.equal(review.classList.contains('hidden'), false);
-    if (kind === 'summary') assert.ok(toText(review.innerHTML).includes(CARE), 'deferred course is inspectable');
+    if (kind === 'summary') {
+      assert.equal(review.classList.contains('hidden'), false);
+      assert.ok(toText(review.innerHTML).includes(CARE), 'deferred course is inspectable');
+    } else {
+      assert.equal(review.classList.contains('hidden'), true);
+      assert.equal(review.innerHTML, '');
+      assert.match(body.innerText, /blood culture was performed/i,
+        'a selected sepsis template is part of the original discharge text and is copied');
+    }
     app.context.switchTab(kind);
     app.document.getElementById('copyActiveBtn').dispatchEvent({ type: 'click' });
     await delay(0);

@@ -1,7 +1,8 @@
 'use strict';
 
 // Formal adapter of acceptance-outputs/accept-outputs.cjs. Original desired
-// behavior and inspect callbacks are retained. The UI-02 prerequisite correction
+// behavior and inspect callbacks are retained except the explicit OUT-04
+// discharge-template contract restored by the user. The UI-02 prerequisite correction
 // is documented locally below; it repairs an audit contradiction, not a product
 // defect. Historical `lines` metadata in the copied fixtures is not interpreted.
 const test = require('node:test');
@@ -77,13 +78,14 @@ accept({
 });
 
 accept({
-  id: 'OUT-04', title: '風險條件不等於已完成處置或正常結果',
+  id: 'OUT-04', title: '自動風險保留入摘／會診計畫，出摘恢復原版所勾選的感染評估模板',
   extra: 'PROM for 20 hrs', ui: true,
-  lines: [1158, 1167, 821, 977], desired: 'PROM 可觸發風險提示或待確認的評估建議；沒有完成/結果紀錄就不得寫成已抽血且正常。',
+  lines: [1158, 1167, 821, 977], desired: '入摘與會診仍把 PROM 自動勾選表達為評估計畫；使用者要求恢復原出摘，因此出摘使用原 sepsis checkbox 模板。若有明確未做或異常結果，仍由原文優先。',
   inspect: o => [
     criterion('PROM 時數有保留', /PROM for 20 hours/.test(o.summary)),
     criterion('入摘未從風險自動宣稱檢驗已完成', !/blood culture was performed/i.test(o.summary)),
-    criterion('出摘未從風險自動宣稱檢驗正常', !/laboratory results were within normal limits/i.test(o.discharge)),
+    criterion('會診保留評估計畫而非已抽血正常', /Sepsis evaluation plan selected/i.test(o.consultation) && !/blood culture was performed|laboratory results were within normal limits/i.test(o.consultation)),
+    criterion('出摘恢復原 sepsis checkbox 模板及所選 PROM 理由', /Due to prolonged PROM/i.test(o.discharge) && /sepsis workup including CBC\/DC, CRP, and blood culture was performed/i.test(o.discharge) && /laboratory results were within normal limits/i.test(o.discharge)),
   ],
   evidence: (o, app) => ({ autoWorkupChecked: app.document.getElementById('sepsisWorkup').checked, summary: match(o.summary, /Due to prolonged PROM[^]*?was performed\./), discharge: match(o.discharge, /Due to prolonged PROM[^]*?normal limits\./) }),
 });
@@ -164,8 +166,9 @@ test('UI-02: Reset 清除 DDH、原始 PE、手動勾選與既有輸出', () => 
   app.context.updateUI();
   const before = currentOutput(app);
   // Coordinated correction of the original audit prerequisite: OUT-04 forbids
-  // treating automatic risk selection as proof that blood culture was performed.
-  // Check the actual suggested controls instead. All Reset outcome checks below
+  // treating automatic risk selection as proof of performed care in admission.
+  // Discharge now deliberately restores its original checkbox template. Check
+  // the actual selected controls instead. All Reset outcome checks below
   // remain exactly as in the original audit; this is not a product-fix count.
   const autoWorkupBeforeReset = app.document.getElementById('sepsisWorkup').checked;
   const autoPromReasonBeforeReset = app.document.querySelector('input[name="sepsisReason"][value="prom"]').checked;

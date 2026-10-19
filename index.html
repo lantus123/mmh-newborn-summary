@@ -1608,7 +1608,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             const genericDisposition=/^(?:(?:the\s+)?(?:infant|baby|newborn)\s+(?:was\s+)?)?(?:transferred|transfer|discharged|discharge|admitted|admission|follow[- ]?up|OPD|MBD)\b|^(?:轉入|轉至|轉出|出院)/i;
             const barrier=()=>{assessment.push('Assessment:');assessmentActive=false;backgroundAssessment=false;};
             const exclude=(raw,reason)=>{excluded.push({raw,reason});barrier();};
-            const clinicalReason='後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。';
+            const clinicalReason='後續或未明示入院時點的臨床紀錄，保留於本區核對，未納入入院正文。';
             const assessmentReason='此列含後續、跨時點或未能確認為入院時的評估，原文保留供核對，未納入入院正文。';
 
             function independentlyTimedPE(line) {
@@ -1751,7 +1751,10 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             return [narrativeMaternalText(data),narrativePerinatalText(data),prenatal].filter(Boolean).join(' ');
         }
         function generateNarrativeReview(data,peFindings,kind='discharge') {
-            const prompts=[], sections=[];
+            // The discharge tab uses the original completed-course template.
+            // Its selected clauses are not separately labeled as pending plans.
+            if(kind==='discharge')return '';
+            const sections=[];
             if(kind==='summary'){
                 const scope=getNarrativeAdmissionScope(data), groups=new Map(), seen=new Set();
                 for(const item of scope.excluded){
@@ -1764,18 +1767,9 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 for(const [reason,rows] of groups)sections.push(`<p class="mt-2"><strong>${escapeHtml(reason)}</strong><br>${rows.map(raw=>escapeHtml(raw).replace(/\n/g,'<br>')).join('<br>')}</p>`);
                 const peContext=admissionPEContext(data,peFindings,scope);
                 if(peContext.deferred.length)sections.push(`<p class="mt-2"><strong>手動 PE 的入院時點待確認</strong><br>${escapeHtml(joinOxford(peContext.deferred))}：同項來源位於後續或時點未明的評估；手動勾選不會將它改寫為入院時所見，請核對原文與勾選。</p>`);
-            }else{
-                const records=getClinicalSourceRecords(data), entries=narrativeClinicalEntries(data,records);
-                const hasCare=entries.some(item=>['course','labs','treatment','education'].includes(item.kind)&&item.line.replace(/^[^:]+:/,'').trim());
-                const hasDisposition=entries.some(item=>/\b(?:discharg(?:e|ed)|follow[- ]?up|OPD|transferred|MBD)\b/i.test(item.line)&&!/:\s*$/.test(item.line));
-                if(!hasCare)prompts.push('尚未提供 BR 照護或離室前觀察；有紀錄時請補入。');
-                if(!hasDisposition)prompts.push('尚未提供 BR 離室狀態與出院安排；請補入實際紀錄。');
             }
-            if(prompts.length)sections.unshift(`<p>${prompts.map(escapeHtml).join(' ')}</p>`);
             const plans=outputSelectedPlans(data,peFindings);
             if(plans)sections.push(`<p class="mt-2"><strong>已選取的評估／處置計畫</strong><br>${plans}</p>`);
-            const education=kind==='discharge'?outputEducationPlan(peFindings):'';
-            if(education)sections.push(`<p class="mt-2"><strong>衛教準備</strong><br>${education}</p>`);
             return sections.length?`<h3 class="font-semibold text-amber-900 mb-1">待確認事項（不包含在複製內容）</h3>${sections.join('')}`:'';
         }
         function updateNarrativeReviews(data,peFindings=[]) {
@@ -1840,23 +1834,131 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         // ============================================================
         // GENERATE DISCHARGE SUMMARY
         // ============================================================
+        // The discharge tab keeps the original BR course template. Supplied
+        // BR records replace matching template clauses; birth and prenatal
+        // history remain in the admission note and consultation.
+        function dischargeTemplateContext(data) {
+            const records=getClinicalSourceRecords(data);
+            const entries=narrativeClinicalEntries(data,records).filter(item=>!/^prenatal/.test(item.kind)&&item.kind!=='resuscitation');
+            const text=entries.map(item=>item.line).join('\n');
+            const has=pattern=>pattern.test(text);
+            const prophylaxisPattern=/\b(?:prophylaxis|immunizations?|vaccin(?:e|ation)s?|HBIG|HBV|hepatitis\s*B|Vitamin\s*K1?|tetracycline|ophthalmic\s+ointment)\b/i;
+            const prophylaxis=entries.filter(item=>prophylaxisPattern.test(item.line));
+            const closing=entries.filter(item=>/^(?:(?:the\s+)?(?:infant|baby|newborn)\s+(?:was\s+)?)?(?:discharg(?:e|ed)|condition\s+at\s+discharge|follow[- ]?up|OPD|MBD|transferred|transfer)\b|^disposition\s*:/i.test(item.line));
+            const course=entries.filter(item=>!prophylaxis.includes(item)&&!closing.includes(item));
+            const respiratoryUnresolved=has(/\b(?:CPAP|BiPAP|HFNC|NCPAP|NIPPV|oxygen|O2\s*hood|respiratory\s+support)\b/i)
+                &&!has(/\b(?:weaned\s+to\s+room\s+air|on\s+room\s+air|respiratory\s+(?:distress|symptoms?)\s+(?:had\s+)?resolved|(?:CPAP|BiPAP|HFNC|oxygen|O2\s*hood)\s+(?:was\s+)?(?:stopped|discontinued|not\s+(?:required|indicated|used)))\b/i);
+            const unresolved=respiratoryUnresolved
+                ||has(/\bpersistent\s+fever\b|\bfever\s+(?:persisted|persists|continued|continues|recurred)\b|\b(?:poor\s+feeding|feeding\s+(?:was\s+)?not\s+tolerated|NPO)\b/i)
+                ||has(/\b(?:bilirubin|T[SC]B|glucose|CRP|blood\s+culture)\b[^\n]*\b(?:elevated|high|low|positive|abnormal|pending)\b|\bphototherapy\s+(?:was\s+)?(?:started|initiated|continued|planned)\b/i)
+                ||has(/\b(?:discharg(?:e|ed)|transfer(?:red)?)\b[^\n]*\b(?:planned|pending|deferred|cancelled|canceled|not\s+yet|not\s+ready)\b|\bnot\s+(?:yet\s+)?discharged\b/i);
+            return {records,entries,text,has,prophylaxis,closing,course,unresolved,respiratoryUnresolved};
+        }
         function generateDischargeSummary(data, peFindings) {
-            // A discharge note adds the recorded nursery observations, care,
-            // and actual discharge arrangements to the relevant background.
-            const records=getClinicalSourceRecords(data), entries=narrativeClinicalEntries(data,records);
-            const isAdmission=item=>/^admi(?:tted|ssion)\b/i.test(item.line);
-            const isClosing=item=>/^(?:discharg(?:e|ed)|condition at discharge|follow[- ]?up|OPD|MBD)\b/i.test(item.line);
-            const initialCare=renderNarrativeRecords(entries.filter(item=>item.kind==='resuscitation'||isAdmission(item)));
-            const courseEntries=entries.filter(item=>!/^prenatal/.test(item.kind)&&item.kind!=='resuscitation'&&!isAdmission(item)&&!isClosing(item));
-            // Reorder only independent single-day statements sharing the same
-            // explicit time scale; otherwise preserve source order and meaning.
-            const dated=courseEntries.map(item=>({...item,days:[...item.line.matchAll(/\bon day\s+(\d+)(\s+of life)?(?=[.,;]|\s*$)/gi)].map(match=>({number:Number(match[1]),anchor:match[2]?'life':'unspecified'}))}));
+            const context=dischargeTemplateContext(data), {records,has,prophylaxis,closing,course}=context;
+            const conflicts=collectPEConflicts(data,peFindings);
+            const selected=peFindings.filter(finding=>!conflicts.includes(finding));
+            const hasRD=selected.some(finding=>finding.includes('Respiratory distress'));
+            const hasCap=document.getElementById('peCaput')?.checked&&!conflicts.some(finding=>finding.includes('Caput succedaneum'));
+            const nbcT=document.getElementById('nbcTransfer')?.checked, nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
+            const parts=[], care=[];
+
+            // Restore the original routine prophylaxis sentence, replacing only
+            // a named item when its administration is explicitly documented.
+            const prophylaxisText=prophylaxis.map(item=>item.line).join('\n');
+            const namedProphylaxis=/\b(?:HBIG|HBV|hepatitis\s*B|vaccin(?:e|ation)s?|Vitamin\s*K1?|tetracycline|ophthalmic\s+ointment)\b/i;
+            const genericProphylaxis=prophylaxis.some(item=>/\b(?:routine\s+prophylaxis|all\s+(?:routine\s+)?prophylaxis)\b/i.test(item.line)&&!namedProphylaxis.test(item.line));
+            const routine=[
+                ['HBV vaccine (IM)',/\b(?:HBV|hepatitis\s*B|vaccin(?:e|ation)s?)\b/i],
+                ['tetracycline ophthalmic ointment (topical)',/\b(?:tetracycline|ophthalmic\s+ointment|eye\s+ointment)\b/i],
+                ['Vitamin K1 (IM)',/\bVitamin\s*K1?\b/i],
+            ].filter(([,pattern])=>!genericProphylaxis&&!pattern.test(prophylaxisText)).map(([label])=>label);
+            const needsHBIG=(data.serology.HBsAg==='+'||data.serology.HBeAg==='+')&&!genericProphylaxis&&!/\bHBIG\b/i.test(prophylaxisText);
+            let prophylaxisSentence=routine.length?`Upon admission, the infant received routine prophylaxis including ${joinOxford(routine)}${needsHBIG?`, plus ${hl('HBIG (IM)')}`:''}.`:needsHBIG?`Upon admission, the infant received ${hl('HBIG (IM)')}.`:'';
+            parts.push([prophylaxisSentence,renderNarrativeRecords(prophylaxis)].filter(Boolean).join(' '));
+
+            // Original checkbox-driven course clauses remain available. An
+            // explicit source about the same care takes precedence over them.
+            const respiratoryRecorded=has(/\b(?:respiratory|oxygen|CPAP|BiPAP|HFNC|NCPAP|NIPPV|O2\s*hood|room\s+air|tachypnea)\b/i);
+            if(hasRD&&!respiratoryRecorded){
+                const finding=selected.find(item=>item.includes('Respiratory distress')), signs=[];
+                if(finding?.includes('nasal flaring'))signs.push('nasal flaring');
+                if(finding?.includes('retraction'))signs.push('subcostal retraction');
+                const symptoms=signs.length?`mild shortness of breath accompanied by ${signs.join(' and ')}`:'mild respiratory distress';
+                care.push(nbcT&&nbcR==='respiratory'
+                    ?`Regarding respiratory status, due to ${hl(symptoms)}, an ${hl('O2 hood was provided')}. However, ${hl('the symptoms persisted')}.`
+                    :`Regarding respiratory status, due to ${hl(symptoms)}, an ${hl('O2 hood was provided with good response')}. The infant was subsequently ${hl('weaned to room air')} and remained stable.`);
+            }
+            const sepsisRecorded=has(/\b(?:sepsis|septic|CBC(?:\/DC)?|CRP|blood\s+culture|antibiotics?|ampicillin|gentamicin)\b/i);
+            if(document.getElementById('sepsisWorkup')?.checked&&!sepsisRecorded){
+                const reasons=Array.from(document.querySelectorAll('input[name="sepsisReason"]:checked')).map(input=>input.value);
+                const labels={prom:'prolonged PROM (>18 hours)',gbs:'GBS colonization with incomplete IAP',fever:'neonatal fever',maternal_fever:'maternal fever'};
+                const named=reasons.map(reason=>labels[reason]).filter(Boolean);
+                care.push(`Due to ${hl(named.length?joinOxford(named):'clinical concern for infection')}, a ${hl('sepsis workup including CBC/DC, CRP, and blood culture was performed')}. The ${hl('laboratory results were within normal limits')}.`);
+            }
+            const hasCeph=selected.some(finding=>finding.includes('Cephalohematoma'));
+            const caputHC=hasCap&&document.querySelector('#caputDetails input[name="caputDetail"]:checked');
+            const cephHC=hasCeph&&document.querySelector('#cephDetails input[name="cephDetail"]:checked');
+            if((caputHC||cephHC)&&!has(/\b(?:head\s+circumference|HC)\b/i)){
+                const diagnoses=[];
+                if(caputHC)diagnoses.push('caput succedaneum');
+                if(cephHC)diagnoses.push('cephalohematoma');
+                care.push(`Due to the presence of ${hl(diagnoses.join(' and '))}, head circumference was monitored ${hl(CAMPUS.hcMonitor.dischargeSentence)}. ${hl('No significant interval increase was observed')}.`);
+            }
+            const feverRecorded=has(/\bfever\b|\bfebrile\b/i)||/\bpersistent\s+fever\b|\bfever\s+(?:persisted|continued|recurred)\b/i.test(data.sourcePE||'');
+            if(selected.some(finding=>finding.includes('Fever'))&&!feverRecorded)care.push(`The infant developed ${hl('fever')} during the hospital course, which ${hl('resolved without intervention')}.`);
+            if(data.isHighRiskForHypoglycemia&&!has(/\b(?:blood\s+glucose|glucose|D-?stick|hypoglycemia)\b/i))care.push(hl('Blood glucose levels were monitored per protocol and remained within normal limits.'));
+
+            const educationRecorded=records.education.some(line=>line.replace(/^[^:]+:/,'').trim());
+            const udt=selected.find(finding=>finding.includes('Undescended testis'));
+            const hydrocele=selected.some(finding=>finding.includes('Hydrocele'));
+            if(udt&&!educationRecorded){
+                const side=udt.match(/\((lt|rt|bilateral)\)/i)?.[1]?.toLowerCase();
+                const description=side==='bilateral'?'bilateral undescended testes':`${side==='lt'?'left ':side==='rt'?'right ':''}undescended testis`;
+                care.push(EDU_TEMPLATES.udt[getVerbosity()](description));
+            }
+            if(hydrocele&&!educationRecorded)care.push(EDU_TEMPLATES.hydrocele[getVerbosity()]());
+
+            // Preserve repaired DDH/compression/PE interpretation, including
+            // explicit negatives, grades, sides and source/manual conflicts.
+            // The old risk-only branch must not invent a normal hip examination.
+            const described=selected.filter(finding=>
+                hasRD&&!respiratoryRecorded&&finding.includes('Respiratory distress')
+                ||(caputHC||cephHC)&&!has(/\b(?:head\s+circumference|HC)\b/i)&&/Caput succedaneum|Cephalohematoma/.test(finding)
+                ||finding.includes('Fever')&&!feverRecorded
+                ||!educationRecorded&&/Undescended testis|Hydrocele/.test(finding));
+            const examination=narrativePE(data,peFindings.filter(finding=>!described.includes(finding)),records);
+            if(examination)care.push(examination);
+            const ddhPE=[...(data.ddhPe||[])];
+            if(selected.some(finding=>finding.includes('DDH suspect'))&&!ddhPE.length)ddhPE.push('suspected DDH on examination');
+            if(ddhPE.length&&!has(/\b(?:DDH|hip|orthopedic)\b|\b(?:follow[- ]?up|referral)\b[^\n]*\b(?:declined|refused|cancelled|canceled|pending|planned)\b/i)){
+                const risks=[...(data.ddhRisk||[]),...(data.compressionSigns||[])];
+                const reason=risks.length?`identified DDH risk factors including ${joinOxford(risks.map(hlSource))}, as well as ${joinOxford(ddhPE.map(hlSource))}`:`${joinOxford(ddhPE.map(hlSource))} on physical examination`;
+                care.push(`Due to ${reason}, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
+            }
+            if(care.length)parts.push(care.join(' '));
+
+            // Preserve source chronology. Only independent single-day records
+            // on the same time scale are reordered, as in the prior renderer.
+            const dated=course.map(item=>({...item,days:[...item.line.matchAll(/\bon day\s+(\d+)(\s+of life)?(?=[.,;]|\s*$)/gi)].map(match=>({number:Number(match[1]),anchor:match[2]?'life':'unspecified'}))}));
             const sameScale=dated.length>1&&dated.every(item=>item.days.length===1&&!/;|\.\s+[A-Z]/.test(item.line))&&new Set(dated.map(item=>item.days[0].anchor)).size===1;
-            const course=renderNarrativeRecords(sameScale?dated.sort((a,b)=>a.days[0].number-b.days[0].number):courseEntries);
-            const closing=renderNarrativeRecords(entries.filter(isClosing));
-            return [narrativeBackground(data),narrativeMaternalParagraph(data,entries),
-                [initialCare,narrativePE(data,peFindings,records)].filter(Boolean).join(' '),course,closing]
-                .filter(Boolean).join('<br><br>');
+            const recordedCourse=renderNarrativeRecords(sameScale?dated.sort((a,b)=>a.days[0].number-b.days[0].number):course);
+            if(recordedCourse)parts.push(recordedCourse);
+            const hasRoutine=has(/\b(?:routine\s+(?:nursery|newborn|BR)\s+care|rooming[- ]in)\b/i);
+            if(nbcT){
+                if(!closing.length){
+                    if(nbcR==='respiratory'&&!respiratoryRecorded)parts.push(hasRD?`Consequently, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`:`Due to ${hl('persistent tachypnea')}, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`);
+                    else if(nbcR==='jaundice'&&!has(/\b(?:jaundice|bilirubin|T[SC]B|phototherapy)\b/i))parts.push(`Due to ${hl('noted jaundice and surging bilirubin levels')}, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`);
+                    else parts.push(`The infant was ${hl('admitted to the NBC for further evaluation and care')}.`);
+                }
+            }else if(!hasRoutine&&!context.unresolved)parts.push(hasRD&&!respiratoryRecorded?'The infant was managed with routine nursery care, and rooming-in with the mother was initiated after respiratory stabilization.':'The infant was managed with routine nursery care and rooming-in was arranged with the mother.');
+            if(!has(/\b(?:feeding|feeds?|breastfeeding|formula|NPO|nil\s+per\s+os)\b/i)&&!context.unresolved)parts.push('Feeding volume was gradually increased as tolerated.');
+            const closingParts=[];
+            if(!nbcT&&!has(/\b(?:bilirubin|T[SC]B|phototherapy)\b/i)&&!context.unresolved)closingParts.push('Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL).');
+            if(closing.length)closingParts.push(renderNarrativeRecords(closing));
+            else if(!nbcT&&!context.unresolved)closingParts.push('The infant was discharged in stable condition with scheduled MBD and OPD follow-up.');
+            if(closingParts.length)parts.push('<br><br>',closingParts.join(' '));
+            return parts.filter(Boolean).join(' ');
         }
 
         // ============================================================
