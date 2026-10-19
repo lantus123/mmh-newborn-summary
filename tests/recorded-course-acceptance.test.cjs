@@ -78,13 +78,13 @@ accept({
 });
 
 accept({
-  id: 'OUT-04', title: '自動風險恢復入摘及出摘原版感染評估模板，會診保留計畫',
+  id: 'OUT-04', title: '自動風險恢復原版感染評估模板，會診回復原欄位不加計畫段落',
   extra: 'PROM for 20 hrs', ui: true,
-  lines: [1158, 1167, 821, 977], desired: '使用者要求入摘及出摘恢復原版，因此兩者使用各自原 sepsis checkbox 模板，會診仍顯示計畫。若有明確未做或異常結果，仍由原文優先。',
+  lines: [1158, 1167, 821, 977], desired: '三份文件皆依使用者最初模板：兩份摘要使用原 sepsis checkbox 句；會診只在原 PROM 欄呈現，不新增所選計畫段落。明確未做或異常結果仍由原文優先。',
   inspect: o => [
     criterion('PROM 時數有保留', /PROM for 20 hours/.test(o.summary)),
     criterion('入摘恢復原 sepsis checkbox 已執行句，但不加出摘的正常結果', /sepsis workup including CBC\/DC, CRP, and blood culture was performed/i.test(o.summary) && !/laboratory results were within normal limits/i.test(o.summary)),
-    criterion('會診保留評估計畫而非已抽血正常', /Sepsis evaluation plan selected/i.test(o.consultation) && !/blood culture was performed|laboratory results were within normal limits/i.test(o.consultation)),
+    criterion('會診保留原 PROM 欄，不新增計畫或已抽血正常段落', /PROM\(\+\) for 20 hrs/i.test(o.consultation) && !/Sepsis evaluation plan selected|blood culture was performed|laboratory results were within normal limits/i.test(o.consultation)),
     criterion('出摘恢復原 sepsis checkbox 模板及所選 PROM 理由', /Due to prolonged PROM/i.test(o.discharge) && /sepsis workup including CBC\/DC, CRP, and blood culture was performed/i.test(o.discharge) && /laboratory results were within normal limits/i.test(o.discharge)),
   ],
   evidence: (o, app) => ({ autoWorkupChecked: app.document.getElementById('sepsisWorkup').checked, summary: match(o.summary, /Due to prolonged PROM[^]*?was performed\./), discharge: match(o.discharge, /Due to prolonged PROM[^]*?normal limits\./) }),
@@ -107,7 +107,7 @@ accept({
   manualPE: ['Respiratory distress'],
   lines: [865, 899, 967], desired: '保留原始 PE 的 Grunting(-) 與 CPAP；勾 RD 不可額外宣稱呻吟、FFO、O2 hood 或已停氧。',
   inspect: o => [
-    criterion('會診保留原始 Grunting(-) 與 CPAP', /Grunting\(-\)/.test(o.consultation) && /CPAP/.test(o.consultation)),
+    criterion('會診保留原始 Grunting(-)，BR 的 CPAP 支持留在原出摘呼吸處置位置', /Grunting\(-\)/.test(o.consultation) && /CPAP/.test(o.discharge)),
     criterion('會診沒有與原始資料衝突的呻吟及 FFO', !/Respiration: Grunting\.|Free flow oxygen\(\+\)/.test(o.consultation)),
     criterion('出摘没有由 RD 自動宣稱 O2 hood 及恢復', !/O2 hood was provided with good response|weaned to room air/.test(o.discharge)),
   ],
@@ -120,7 +120,7 @@ accept({
   manualPE: ['Fever'],
   lines: [989], desired: '保留原始持續發燒/治療資訊；單一 Fever 勾選不能產生自行退燒且無治療的結論。',
   inspect: o => [
-    criterion('出摘保留持續發燒及治療資訊', /persistent fever/.test(o.discharge) && /antibiotics (?:were )?started/i.test(o.discharge)),
+    criterion('出摘保留持續發燒及治療資訊', /persistent fever/i.test(o.discharge) && /antibiotics (?:were )?started/i.test(o.discharge)),
     criterion('出摘没有相反的自行緩解敘述', !/resolved without intervention/.test(o.discharge)),
   ],
   evidence: o => ({ discharge: match(o.discharge, /The infant developed fever[^]*?intervention\./) }),

@@ -57,8 +57,8 @@ Discharge planned tomorrow if feeding remains adequate.`);
   assert.match(bodies.summary, /Jitteriness/i);
   assert.doesNotMatch(bodies.summary, /38 mg\/dL|glucose gel/i,
     'the separately requested original admission style does not append a detailed treatment course');
-  assert.match(bodies.consultation, /38 mg\/dL/);
-  assert.match(bodies.consultation, /glucose gel/i);
+  assert.doesNotMatch(bodies.consultation, /@ Clinical records|38 mg\/dL|glucose gel/i,
+    'the original consultation has no laboratory/treatment course appendix');
   assert.doesNotMatch(bodies.summary, /61 mg\/dL|discharge planned|discharged in stable condition|received routine prophylaxis/i);
   assert.match(bodies.discharge, /61 mg\/dL/);
   assert.notEqual(compact(bodies.summary), compact(bodies.discharge));
@@ -98,7 +98,7 @@ test('DR-04: Copy includes the restored course and raw/manual PE conflict, and R
   assert.equal(copied[0], body.innerText, 'the bound Copy action copies the visible discharge body');
   assert.match(copied[0], /Upon admission, the infant received routine prophylaxis/);
   assert.match(copied[0], /Heart murmur\(-\)/i);
-  assert.match(copied[0], /PE source conflict:\s*Heart murmur/i);
+  assert.match(copied[0], /Heart murmur[^.]{0,200}(?:conflict|manual selection positive)|conflict[^.]{0,200}Heart murmur/i);
   assert.doesNotMatch(copied[0], /待確認事項|尚未提供 BR|Selected transfer plan/i);
   app.document.getElementById('resetBtn').dispatchEvent({ type: 'click' });
   assert.equal(app.document.getElementById('inputData').value, '');
@@ -183,10 +183,11 @@ Hospital course: persistent fever, antibiotics started`, ['Fever']);
 });
 
 test('DR-10: a conditional discharge plan stays a plan instead of falling through to the original completed-discharge ending', () => {
-  const { bodies } = specimen(`${BASE}
+  const { app, data, bodies } = specimen(`${BASE}
 Education: caregivers will be counseled about feeding and jaundice before discharge.
 Discharge plan: home tomorrow if feeding remains adequate; not yet discharged.`);
-  assert.match(bodies.discharge, /will be counseled about feeding and jaundice/i);
+  assert.ok(app.context.getClinicalSourceRecords(data).education.some(line => /will be counseled about feeding and jaundice/i.test(line)),
+    'generic education remains parsed without adding a new counseling section');
   assert.match(bodies.discharge, /home tomorrow if feeding remains adequate/i);
   assert.match(bodies.discharge, /not yet discharged/i);
   assert.doesNotMatch(bodies.discharge, /Caregivers were counseled|Caregivers verbalized understanding|The infant was discharged in stable condition|was discharged home/i);

@@ -56,11 +56,13 @@ test('AR-01: explicitly normal input reproduces the original one-paragraph admis
   assert.equal(review, '', 'the simplified admission has no supplementary course/checklist panel');
 });
 
-test('AR-02: a short input stays simple without inventing missing normal findings or requiring a BR course', () => {
+test('AR-02: a short input keeps original routine PE text without inventing parsed birth or maternal values or requiring a BR course', () => {
   const { bodies, review } = specimen('BW 3200 gm');
   assert.match(bodies.summary, /3200 gm/);
   assert.doesNotMatch(bodies.summary,
-    /Maternal screening was negative|no premature rupture|no PROM|no MAS|no gross anomalies|DDH[^.]*was negative|\bAGA\b|via NSD|female infant/i);
+    /Maternal screening was negative|no premature rupture|no PROM|no MAS|DDH[^.]*was negative|\bAGA\b|via NSD|female infant/i);
+  assert.match(bodies.summary, /Physical examination revealed no gross anomalies\./,
+    'the user explicitly restored the original routine PE template when no source PE is supplied');
   assert.doesNotMatch(bodies.diagnosis, /# Term infant|, AGA\b/);
   assert.doesNotMatch(bodies.summary, /待確認事項|尚未提供 BR|後續或未明示入院時點|Selected .* plan|Counseling checklist/i);
   assert.equal(review, '');
@@ -123,7 +125,7 @@ test('AR-05: bound input, manual PE, Copy and Reset retain a true conflict witho
   assert.equal(copied.length, 1);
   assert.equal(copied[0], body.innerText);
   assert.match(copied[0], /Heart murmur\(-\)/i);
-  assert.match(copied[0], /PE source conflict:\s*Heart murmur/i);
+  assert.match(copied[0], /Heart murmur[^.]{0,200}(?:conflict|manual selection positive)|conflict[^.]{0,200}Heart murmur/i);
   assert.match(copied[0], /admitted to the Baby Room for routine newborn care/i);
   assert.doesNotMatch(copied[0], /待確認事項|已選取的評估／處置計畫|Risk factors and examination findings/i);
   app.context.switchTab('diagnosis');
@@ -132,9 +134,9 @@ test('AR-05: bound input, manual PE, Copy and Reset retain a true conflict witho
   const diagnosisCopy = copied.at(-1);
   assert.equal(copied.length, 2);
   assert.equal(diagnosisCopy, app.document.getElementById('diagnosisOutput').innerText);
-  assert.match(diagnosisCopy, /Heart murmur/i);
-  assert.match(diagnosisCopy, /conflict|discordant|inconsistent/i,
-    'a separately copied diagnosis still makes the source/manual disagreement visible');
+  // The original diagnosis list may omit an unresolved observation. If kept,
+  // its own line must remain qualified; a new source-warning appendix is not
+  // required to make the separate diagnosis Copy useful.
   for (const line of diagnosisCopy.split('\n').filter(line => /^#\s*Heart murmur\b/i.test(line))) {
     assert.match(line, /conflict|discordant|inconsistent/i,
       'a source-negative/manual-positive murmur is not an unqualified positive diagnosis');

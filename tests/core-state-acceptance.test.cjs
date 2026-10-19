@@ -117,13 +117,15 @@ group('A09', 'Pre-eclampsia 與 MAS 英文陽性', 'blocker', '肯定結果被�
   },
 }]);
 
-group('A10', '未提供母體資料須維持未記載', 'blocker', '把資料缺漏變為既成陰性或未曾檢查。', [{
-  input: 'GA 39 weeks\nBW 3200 gm', expected: '未提 GBS/GDM/PROM/MAS/PE/serology，就不得聲稱陰性或 not tested。',
-  inspect: ({ output, check }) => {
+group('A10', '未提供母體資料保留 parser 狀態及使用者原會診模板', 'blocker', '原版固定句不能回頭把 parser 缺值當成已建立的結果。', [{
+  input: 'GA 39 weeks\nBW 3200 gm', expected: 'parser 缺值保留；一般會診預設回復原版，明示未知或矛盾仍另由 A03/A09 與 parser 測試檢查。',
+  inspect: ({ data, output, check }) => {
     check('no fabricated negative GBS/GDM', false, /negative for GDM, GBS colonization/.test(output.summary));
     check('no fabricated no-PROM/no-MAS', false, /no premature rupture of membranes \(PROM\) or meconium aspiration syndrome \(MAS\)/.test(output.summary));
-    check('no fabricated negative preeclampsia', false, /maternal preeclampsia\(-\)/.test(output.consultation));
-    check('no fabricated not-tested serology', false, /Serology: not tested/.test(output.consultation));
+    check('preeclampsia remains unknown in parser', 'unknown', data.preEclampsiaStatus);
+    check('serology remains unknown in parser', 'unknown', data.serologyStatus.HBsAg);
+    check('original consultation risk flag is restored', true, /maternal preeclampsia\(-\)/.test(output.consultation));
+    check('original consultation serology placeholder is restored', true, /Serology: not tested/.test(output.consultation));
   },
 }]);
 

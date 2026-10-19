@@ -53,7 +53,11 @@ test('HD-01: negative, missing, indeterminate and conflicting HIV remain absent 
     'Infant HIV(+)\nMaternal HIV(-)',
   ]) {
     const { bodies } = specimen(`${BASE}\nHBsAg(-), HBeAg(-), RPR(-)\n${source}`);
-    noHIV(bodies, source || 'missing');
+    if (/Infant HIV\(\+\)/.test(source)) {
+      noHIV({ summary: bodies.summary, discharge: bodies.discharge, diagnosis: bodies.diagnosis }, 'negative maternal HIV outside the infant-positive newborn field');
+      assert.match(bodies.consultation, /@ Newborn's condition:[^]*Infant HIV\(\+\)/i);
+      assert.doesNotMatch(bodies.consultation, /Maternal HIV\(-\)|HIV[^.\n]*(?:was negative|non-reactive)/i);
+    } else noHIV(bodies, source || 'missing');
     assert.match(bodies.summary, /HBsAg/);
     assert.match(bodies.consultation, /RPR/);
   }
@@ -80,11 +84,14 @@ Treatment: Vitamin K1 given at 03:00; HIV(-)`;
     assert.match(bodies[name], /RPR/i);
   }
   assert.match(bodies.diagnosis, /Maternal GBS positive/i);
-  assert.match(bodies.diagnosis, /ampicillin 2 g IV/i, 'the existing IAP source detail is retained');
-  for (const name of ['consultation', 'discharge', 'diagnosis']) {
-    assert.match(bodies[name], /CRP[^.\n]*4\.2 mg\/L/i, `${name}: an adjacent clinical result is retained`);
+  const records = app.context.getClinicalSourceRecords(data);
+  assert.ok(records.labs.some(line => /CRP[^.\n]*4\.2 mg\/L/i.test(line)),
+    'nonpositive HIV display filtering does not erase the adjacent result from the laboratory parser');
+  for (const name of ['discharge']) {
     assert.match(bodies[name], /Vitamin K1[^.\n]*03:00/i, `${name}: an adjacent recorded treatment is retained`);
   }
+  assert.doesNotMatch(bodies.consultation, /@ Clinical records|CRP[^.\n]*4\.2 mg\/L|Vitamin K1[^.\n]*03:00/i);
+  assert.doesNotMatch(bodies.diagnosis, /Additional source records|CRP[^.\n]*4\.2 mg\/L|Vitamin K1[^.\n]*03:00/i);
   const copied = [];
   app.context.navigator.clipboard = { async writeText(text) { copied.push(text); } };
   app.document.getElementById('inputData').value = source;
@@ -95,7 +102,7 @@ Treatment: Vitamin K1 given at 03:00; HIV(-)`;
   assert.equal(copied.length, 1);
   assert.equal(copied[0], app.document.getElementById('diagnosisOutput').innerText);
   assert.doesNotMatch(copied[0], /\bHIV\b/i);
-  assert.match(copied[0], /ampicillin 2 g IV/i);
+  assert.match(copied[0], /Maternal GBS positive/i);
   assert.equal(app.errors.length, 0);
 });
 
@@ -109,18 +116,20 @@ test('HD-03: definite maternal and recorded infant HIV positivity stay in their 
       assert.doesNotMatch(bodies[name], /HIV\s*(?:\(-\)|(?:was\s+)?negative|non[- ]?reactive)/i);
     }
   }
-  const { data, bodies } = specimen(`${BASE}\nMaternal HIV(-)\nLaboratory: Infant HIV(+)`);
+  const { app, data, bodies } = specimen(`${BASE}\nMaternal HIV(-)\nLaboratory: Infant HIV(+)`);
   assert.equal(data.serologyStatus.HIV, 'negative', 'an infant result does not change the maternal status');
   assert.doesNotMatch(bodies.summary, /\bHIV\b/i, 'the negative maternal field remains omitted');
-  for (const name of ['consultation', 'discharge', 'diagnosis']) {
-    assert.match(bodies[name], /Infant HIV\(\+\)/i, `${name}: a definite positive clinical result remains visible with its subject`);
-    assert.doesNotMatch(bodies[name], /Maternal HIV\(-\)/i);
-  }
-  const positiveCare = specimen(`${BASE}\nMaternal HIV(+)\nTreatment: HIV prophylaxis with zidovudine started at 03:00`).bodies;
-  for (const name of ['consultation', 'discharge', 'diagnosis']) {
-    assert.match(positiveCare[name], /zidovudine[^.\n]*03:00/i,
-      `${name}: the recorded HIV treatment and time remain when the maternal result is definitely positive`);
-  }
+  assert.ok(app.context.getClinicalSourceRecords(data).labs.some(line => /Infant HIV\(\+\)/i.test(line)));
+  assert.match(bodies.consultation, /@ Newborn's condition:[^]*Infant HIV\(\+\)/i,
+    'a supplied positive infant result remains with its subject in the existing newborn field');
+  assert.doesNotMatch(bodies.consultation, /Maternal HIV\(-\)|@ Clinical records/i);
+  assert.doesNotMatch(bodies.diagnosis, /^#.*HIV|Additional source records/im,
+    'a lab record does not create a new HIV diagnosis or an appended source archive');
+  const careResult = specimen(`${BASE}\nMaternal HIV(+)\nTreatment: HIV prophylaxis with zidovudine started at 03:00`);
+  assert.ok(careResult.app.context.getClinicalSourceRecords(careResult.data).treatment.some(line => /zidovudine[^.\n]*03:00/i.test(line)),
+    'the complete actual drug/time remains in the treatment parser without requiring three new source blocks');
+  assert.doesNotMatch(careResult.bodies.consultation, /@ Clinical records|Additional source records/i);
+  assert.doesNotMatch(careResult.bodies.diagnosis, /Additional source records/i);
 });
 
 test('HD-04: complete negative DDH screening uses the single original admission sentence and no discharge catalog', () => {
@@ -156,7 +165,8 @@ test('HD-06: a risk with missing, unknown or partial hip results never acquires 
       assert.doesNotMatch(bodies[name],
         /but physical signs were negative|physical examination of the hips was unremarkable|Screening for DDH risk factors and physical signs was negative/i,
         `${name}/${hip || 'missing'}: partial or absent evidence cannot establish an entirely normal hip examination`);
-      if (/unknown/.test(hip)) assert.match(bodies[name], /unknown|unresolved|uncertain|not established/i);
+      if (/unknown/.test(hip)) assert.match(data.recordedAssessment.hip.source, /unknown/i,
+        'an unspecified hip result stays in the parser; it does not require a new uncertainty paragraph');
       if (/Barlow/.test(hip)) assert.doesNotMatch(bodies[name], /positive Barlow's sign|Barlow\(\+\)/i,
         'an ordinary negative sibling may be omitted, but cannot become positive');
     }
@@ -225,7 +235,7 @@ PE: Heart murmur(-); ${hip}`, ['Heart murmur']);
       assert.match(bodies[name], /Barlow/);
       assert.match(bodies[name], /Ortolani/);
       assert.match(bodies[name], /Heart murmur\(-\)/i);
-      assert.match(bodies[name], /PE source conflict:\s*Heart murmur/i);
+      assert.match(bodies[name], /Heart murmur[^.]{0,200}(?:conflict|manual selection positive)|conflict[^.]{0,200}Heart murmur/i);
       assert.doesNotMatch(bodies[name], /positive Barlow's sign|positive Ortolani's sign|outpatient follow-up examination was arranged|Screening for DDH risk factors and physical signs was negative/i);
     }
     assert.doesNotMatch(bodies.diagnosis, /^# Positive .*sign|Risk factors and examination findings/im);
@@ -246,7 +256,7 @@ test('HD-10: explicitly pending or canceled DDH follow-up overrides the original
     assert.match(bodies.diagnosis, /^# Positive Ortolani/im);
     const hipDiagnosis = bodies.diagnosis.split('\n').find(line => /^# Positive Ortolani/i.test(line));
     assert.doesNotMatch(hipDiagnosis, /Follow[- ]?up|\bplanned\b|\bcancel(?:l)?ed\b/i,
-      'the positive hip-sign diagnosis excludes follow-up plans retained in additional source records');
+      'the positive hip-sign diagnosis excludes follow-up plans, which belong in the original discharge slot');
     assert.doesNotMatch(bodies.diagnosis, /Risk factors and examination findings/i);
   }
 });
