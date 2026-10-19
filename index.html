@@ -998,7 +998,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             {key:'resuscitation',label:'Resuscitation',re:/^(?:resuscitation|(?:high\s*risk\s+)?neonatal\s+(?:resuscitation|critical\s+care)|(?:manual\s+)?positive\s+pressure\s+ventilation|PPV|intubation|neopuff|free\s*flow\s*oxygen|FFO|chest\s+compressions?|UVC|epinephrine|NS\s+challenge)\b/i},
             {key:'labs',label:'Laboratory and measurement records',re:/^(?:lab(?:s|oratory)?(?:\s+(?:data|results?))?|CBC(?:\/DC)?|CRP|blood\s+culture|blood\s+glucose|glucose|D-?stick|(?:total|serum|transcutaneous)\s+bilirubin|bilirubin|T[SC]B|head\s+circumference|HC)\b/i},
             {key:'treatment',label:'Treatment and prophylaxis',re:/^(?:treatments?|medications?|therapy|respiratory\s+support|oxygen(?:\s+support)?|CPAP|BiPAP|O2\s*hood|HFNC|phototherapy|prophylaxis|immunizations?|vaccin(?:e|ation)s?|HBIG|HBV\s+vaccine|Vitamin\s*K1?)\b/i},
-            {key:'course',label:'Hospital course',re:/^(?:(?:hospital|clinical|postnatal|nursery|neonatal)\s+course|course|feeding(?:\s+(?:volume|tolerance|history))?|rooming[- ]in|vital\s+signs|condition\s+at\s+discharge)\b/i},
+            {key:'course',label:'Clinical course',re:/^(?:(?:BR|hospital|clinical|postnatal|nursery|neonatal)\s+course|course|feeding(?:\s+(?:volume|tolerance|history))?|rooming[- ]in|vital\s+signs|condition\s+at\s+discharge)\b/i},
             {key:'disposition',label:'Disposition and follow-up',re:/^(?:disposition|discharge|transfer|transferred|admission(?:\s+reason)?|admitted|discharged|follow[- ]?up|OPD|MBD)\b/i},
             {key:'education',label:'Counseling record',re:/^(?:education|counsel(?:ing|ling)|caregivers?\s+(?:were\s+)?counsel|parents?\s+(?:were\s+)?(?:counsel|declined|refused))\b/i},
         ];
@@ -1166,12 +1166,18 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             return /[.!?。！？][”"')\]]?$/.test(sentence)?sentence:sentence+'.';
         }
         function narrativeQuoted(value,kind) {
-            const labels={prenatalSteroid:'prenatal steroid',prenatalAntibiotics:'prenatal antibiotic',resuscitation:'resuscitation',labs:'laboratory',treatment:'treatment',course:'hospital course',disposition:'disposition',education:'counseling',pe:'physical examination'};
+            const labels={prenatalSteroid:'prenatal steroid',prenatalAntibiotics:'prenatal antibiotic',resuscitation:'resuscitation',labs:'laboratory',treatment:'treatment',course:'clinical course',disposition:'disposition',education:'counseling',pe:'physical examination'};
             return `The ${labels[kind]||'clinical'} record stated “${String(value).trim().replace(/\.$/,'')}”.`;
         }
         function narrativeClinicalClause(value,kind) {
             const original=value.trim();
-            let text=original.replace(/^(?:(?:hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|prophylaxis|immunizations?|vaccin(?:e|ation)s?|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition)\s*[:：]\s*/i,'').trim();
+            const timed=original.match(/^(?:lab(?:s|oratory)?(?:\s+(?:data|results?))?|treatments?|medications?|therapy|respiratory\s+support|resuscitation)\s+((?:at|on)\s+(?:(?:BR|nursery)\s+)?admission)\s*[:：]\s*(.+)$/i)
+                ||original.match(/^((?:at|on)\s+(?:(?:BR|nursery)\s+)?admission|at\s+birth|at\s+delivery|in\s+the\s+delivery\s+room)\s*[:：]\s*(.+)$/i);
+            if(timed){
+                const statement=narrativeClinicalClause(timed[2],kind).replace(/^[A-Z](?=[a-z])/,letter=>letter.toLowerCase());
+                return narrativeSentence(`${timed[1]}, ${statement}`);
+            }
+            let text=original.replace(/^(?:(?:BR|hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|prophylaxis|immunizations?|vaccin(?:e|ation)s?|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition)\s*[:：]\s*/i,'').trim();
             if(!text) return '';
             text=text.replace(/\.$/,'');
             let match;
@@ -1186,6 +1192,10 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 return narrativeSentence(`The infant had persistent fever, and ${match[1]} were ${match[2]}${match[3]}`);
             if(/^persistent fever$/i.test(text)) return 'The infant had persistent fever.';
             if(/^fever\s+(?:resolved|persisted|recurred|improved|continued)\b/i.test(text)) return narrativeSentence(`The ${text.replace(/^fever/i,'fever')}`);
+
+            // A complete treatment sentence such as "glucose gel was given"
+            // is not a glucose measurement merely because of its first word.
+            if(kind==='treatment'&&/^[^:]+\b(?:was|were|had been|has been|have been)\b/i.test(text))return narrativeSentence(text);
 
             const lab=/^(blood\s+glucose|glucose|D-?stick|CRP|CBC(?:\/DC)?|blood\s+culture|(?:total|serum|transcutaneous)\s+bilirubin|bilirubin|T[SC]B|head\s+circumference|HC)\s*(?::\s*|\s+)(.+)$/i;
             if((match=text.match(lab))){
@@ -1227,7 +1237,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             if((match=text.match(/^discharge\s*:\s*(planned|pending|deferred|cancelled|canceled)(.*)$/i))) return narrativeSentence(`Discharge was ${match[1]}${match[2]}`);
             if((match=text.match(/^(?:OPD\s+)?follow[- ]?up\s+(?:on|for)\s+(\d{4}[-/]\d{1,2}[-/]\d{1,2})$/i))) return narrativeSentence(`${/^OPD/i.test(text)?'OPD follow-up':'Follow-up'} was planned for ${match[1]}`);
             if((match=text.match(/^follow[- ]?up\s*:\s*(.+)$/i))) return narrativeQuoted(original,kind);
-            if((match=text.match(/^(admitted|transferred|discharged)\s+(to|for|on|in|home|with)\b(.*)$/i))) return narrativeSentence(`The infant was ${match[1]} ${match[2]}${match[3]}`);
+            if((match=text.match(/^(admitted|transferred|discharged)\s+(to|for|on|in|home|with)\b(.*)$/i))) return narrativeSentence(`The infant was ${match[1].toLowerCase()} ${match[2].toLowerCase()}${match[3]}`);
             if((match=text.match(/^admission(?:\s+reason)?\s*:\s*(.+)$/i))&&!/\b(?:planned|if|consider|pending)\b/i.test(match[1])) return narrativeSentence(`The infant was admitted for ${match[1]}`);
             if((match=text.match(/^(?:prenatal|antenatal|maternal)\s+antibiotics?\s*:\s*(.+)$/i))&&!/\b(?:not|no|if|consider|planned|pending|unknown|declined|refused)\b|\?/i.test(match[1])) return narrativeSentence(`Maternal prenatal antibiotic use included ${match[1]}`);
             if((match=text.match(/^(?:prenatal|antenatal|maternal)\s+(?:steroids?|corticosteroids?)(?:\s+use)?\s*:\s*(.+?)\s+x\s*(\d+)\s+doses?\s+completed$/i))) return narrativeSentence(`A prenatal course of ${match[2]} doses of ${match[1]} was completed`);
@@ -1242,7 +1252,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         function narrativeClinicalRecord(line,kind) {
             // A heading alone is context for its continuation lines, not a
             // clinical fact and not a sentence in the copied note.
-            if(/^(?:(?:hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition|(?:prenatal|antenatal)\s+(?:steroid(?:\s+use)?|antibiotics?))\s*[:：]\s*$/i.test(line)) return '';
+            if(/^(?:(?:BR|hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition|(?:prenatal|antenatal)\s+(?:steroid(?:\s+use)?|antibiotics?))\s*[:：]\s*$/i.test(line)) return '';
             if(kind==='resuscitation'){
                 const actions=line.replace(/^resuscitation\s*:\s*/i,'').split(/,\s*/);
                 const sentences=actions.map(action=>narrativeClinicalClause(action,kind));
@@ -1278,12 +1288,13 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 else if(signed.every(Boolean)&&signed.some(match=>match[3])){
                     parts.push(...signed.map(match=>hlSource(narrativeSentence(`${match[1]} was ${match[2]==='+'?'present':'absent'}${match[3]||''}`))));
                 }else if(signed.every(Boolean)){
-                    const present=signed.filter(match=>match[2]==='+').map(match=>match[1]);
-                    const absent=signed.filter(match=>match[2]==='-').map(match=>match[1]);
+                    const findingName=value=>/^(?:Barlow|Ortolani|Galeazzi)\b/.test(value)?value:value.replace(/^[A-Z](?=[a-z])/,letter=>letter.toLowerCase());
+                    const present=signed.filter(match=>match[2]==='+').map(match=>findingName(match[1]));
+                    const absent=signed.filter(match=>match[2]==='-').map(match=>findingName(match[1]));
                     if(present.length) parts.push(hlSource(narrativeSentence(`${joinOxford(present)} ${present.length===1?'was':'were'} present`)));
                     if(absent.length) parts.push(hlSource(narrativeSentence(`${joinOxford(absent)} ${absent.length===1?'was':'were'} absent`)));
                 }else if(detailedMurmur){
-                    parts.push(hlSource(narrativeSentence(`A heart murmur was present (${detailedMurmur[1]}, ${detailedMurmur[2]})`)));
+                    parts.push(hlSource(narrativeSentence(`A heart murmur was present (${detailedMurmur[1]}, ${detailedMurmur[2].replace(/\.$/,'')})`)));
                 }else if(/^(?:(?:left|right|bilateral)\s+)?(?:preauricular pit|ear pit|hydrocele|inguinal hernia|undescended testis|grade\s+\d\/\d\s+[^;\n]+murmur)$/i.test(source)){
                     parts.push(hlSource(narrativeSentence(`Physical examination showed ${/^bilateral/i.test(source)?'':/^[aeiou]/i.test(source)?'an ':'a '}${source}`)));
                 }else parts.push(hlSource(narrativeQuoted(source,'pe')));
@@ -1581,41 +1592,190 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             return parts.map(maternalNarrativeSentence).filter(Boolean).join(' ');
         }
 
-        function generateNarrative(data,peFindings) {
-            const records=getClinicalSourceRecords(data), entries=narrativeClinicalEntries(data,records);
-            const render=items=>items.map(item=>narrativeClinicalRecord(item.line,item.kind)).filter(Boolean).join(' ');
-            const background=[narrativeBirthText(data)];
-            if(/^\d+\s*(?:->|to)\s*\d+$/.test(String(data.apgar||''))) background.push(outputApgarText(data));
-            const maternal=[narrativeMaternalText(data),narrativePerinatalText(data)];
-            // Do not repeat a dose already retained in the GBS/IAP source.
+        // Admission notes describe birth and the initial assessment. Later
+        // records stay available for review and for the separate discharge
+        // renderer. This helper has no transfer or encounter state machine.
+        function getNarrativeAdmissionScope(data) {
+            const source=String(data.sourceText||'').replace(/\r\n?/g,'\n');
+            const entries=[], excluded=[], assessment=[];
+            let context='initial', seenLater=false, activeKind=null, assessmentActive=false, backgroundAssessment=false;
+            const laterTime=text=>/\bon\s+day\s+(?:[2-9]|[1-9]\d+)\b|\bat\s+(?:[1-9]\d*(?:\.\d+)?|0\.\d*[1-9]\d*)\s*(?:hours?|hrs?|days?)\s+(?:of\s+(?:age|life))\b|\b(?:later|subsequently|during\s+the\s+(?:nursery|BR)\s+stay)\b|生後\s*[1-9]\d*\s*(?:小時|天)|第\s*(?:[2-9]|[1-9]\d+)\s*天/i.test(text);
+            const atAdmission=text=>/\b(?:at|on)\s+(?:(?:BR|nursery)\s+)?admission\b|入(?:嬰兒)?室時/i.test(text);
+            const atBirth=text=>/\b(?:at\s+(?:birth|delivery)|in\s+(?:the\s+)?delivery\s+room)\b|出生時|產房(?:內)?/i.test(text);
+            const assessmentHeading=/^(?:(?:P\.?E\.?|physical\s+exam(?:ination)?|DDH|hip\s*(?:PE|exam)|intrauterine\s*(?:compression|constraint))\b|子宮內壓迫|理學檢查|身體檢查|髖(?:關節)?檢查)/i;
+            const generalBoundary=/^(?:(?:GA|BW|AGA|SGA|LGA|Apgar|PROM|MAS|GBS|GDM|HBsAg|HBeAg|HIV|RPR|maternal|prenatal|birth|delivery|newborn|history|plan|assessment|impression|diagnos(?:is|es))\b|G\d+\s*P\d+|母親|病史|處置|診斷)/i;
+            const genericCourse=/^(?:(?:[\w/-]+\s+){0,2}course|照護紀錄|病程)\s*[:：]/i;
+            const genericDisposition=/^(?:(?:the\s+)?(?:infant|baby|newborn)\s+(?:was\s+)?)?(?:transferred|transfer|discharged|discharge|admitted|admission|follow[- ]?up|OPD|MBD)\b|^(?:轉入|轉至|轉出|出院)/i;
+            const barrier=()=>{assessment.push('Assessment:');assessmentActive=false;backgroundAssessment=false;};
+            const exclude=(raw,reason)=>{excluded.push({raw,reason});barrier();};
+            const clinicalReason='後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。';
+            const assessmentReason='此列含後續、跨時點或未能確認為入院時的評估，原文保留供核對，未納入入院正文。';
+
+            function independentlyTimedPE(line) {
+                if(/\b(?:or|if|unless|not|no|without|possible|suspected|uncertain|equivocal)\b|或|[?±]/i.test(line))return null;
+                const header=line.match(/^(?:P\.?E\.?|physical\s+exam(?:ination)?|理學檢查|身體檢查)\s*[:：]\s*/i);
+                if(!header)return null;
+                const items=line.slice(header[0].length).split(/[,;]\s*/);
+                if(items.length<2||items.some(item=>!/^([^():;,]+?)\s*\([+-]\)\s+(?:(?:at\s+birth)|(?:(?:at|on)\s+(?:(?:BR|nursery)\s+)?admission)|(?:on\s+day\s+\d+(?:\s+of\s+life)?)|(?:at\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?|days?)\s+of\s+(?:age|life)))[.]?$/i.test(item)))return null;
+                const initial=items.filter(item=>atBirth(item)||atAdmission(item));
+                const later=items.filter(item=>!atBirth(item)&&!atAdmission(item));
+                return initial.length&&later.length?{initial:header[0]+initial.join(', '),later}:null;
+            }
+
+            function splitRow(row,start) {
+                // Split only a newly labeled record, not the individual clauses
+                // of a PE row. A time qualifier cannot be detached this way.
+                const split=/;[ \t]*(?=(?:(?:(?:prenatal|maternal)\s+(?:steroids?|antibiotics?)|resuscitation|laboratory|blood\s+(?:glucose|culture)|CRP|treatment|respiratory\s+support|(?:[\w/-]+\s+){0,2}course|education|disposition|discharge|admission|follow[- ]?up|(?:P\.?E\.?|physical\s+exam(?:ination)?)|DDH\s+(?:risk|PE)|子宮內壓迫|plan)\s*[:：]|transferred\s+to\b|discharged\s+(?:to|home)\b))/gi;
+                const parts=[];let begin=0,match;
+                while((match=split.exec(row))){parts.push({raw:row.slice(begin,match.index),order:start+begin});begin=match.index+match[0].length;}
+                parts.push({raw:row.slice(begin),order:start+begin});
+                return parts.filter(part=>part.raw.trim()).map(part=>({...part,order:part.order+part.raw.search(/\S/),raw:part.raw.trim()}));
+            }
+
+            let offset=0;
+            for(const row of source.split('\n')) {
+                if(!row.trim()){activeKind=null;context=seenLater?'later':'initial';offset+=row.length+1;continue;}
+                const parts=splitRow(row,offset);offset+=row.length+1;
+                for(const part of parts) {
+                    const raw=part.raw, normalized=normalizeAssessmentText(raw).replace(/^(?:[@#*•-]|\d+[.)])\s+/,'').trim();
+                    let line=normalized, explicitContext=null;
+                    const pointHeader=line.match(/^((?:(?:at|on)\s+(?:(?:BR|nursery)\s+)?admission|(?:BR|nursery)\s+admission|入(?:嬰兒)?室時)|(?:at\s+birth|at\s+delivery|delivery\s+room|出生時|產房(?:內)?))\s*[:：]\s*(.*)$/i);
+                    if(pointHeader) {
+                        explicitContext=/(?:admission|入.*室時)/i.test(pointHeader[1])?'admission':'birth';
+                        context=explicitContext;activeKind=null;barrier();line=pointHeader[2];
+                        if(!line)continue;
+                    }
+                    const explicitAdmission=explicitContext==='admission'||atAdmission(line);
+                    const explicitBirth=explicitContext==='birth'||atBirth(line);
+                    const delayed=laterTime(line);
+                    const ageMarkers=[...line.matchAll(/\bat\s+(\d+(?:\.\d+)?)\s*(hours?|hrs?|days?)\s+of\s+(?:age|life)\b/gi)];
+                    const mixedTiming=delayed&&(
+                        /\b(?:later|subsequently|on\s+day\s+(?:[2-9]|[1-9]\d+))\b|[;；]/i.test(line)
+                        ||new Set(ageMarkers.map(match=>match[1]+':'+(/days?/i.test(match[2])?'days':'hours'))).size>1
+                        ||[...line.matchAll(/\([+-]\)/g)].length>1
+                    );
+                    const initialTiming=!delayed||explicitAdmission&&!mixedTiming;
+                    let group=CLINICAL_SOURCE_GROUPS.find(item=>item.re.test(line));
+                    // Recognize headings qualified by an explicit initial time
+                    // without deleting that qualification from the rendered line.
+                    const timedClinical=line.match(/^(lab(?:s|oratory)?(?:\s+(?:data|results?))?|treatments?|medications?|therapy|respiratory\s+support|resuscitation)\s+(?:at|on)\s+(?:(?:BR|nursery)\s+)?admission\s*[:：]/i);
+                    if(timedClinical)group={key:/^lab/i.test(timedClinical[1])?'labs':/^resuscitation/i.test(timedClinical[1])?'resuscitation':'treatment'};
+                    const deliveryResuscitation=explicitBirth&&/\b(?:PPV|positive\s+pressure\s+ventilation|resuscitation|intubation|neopuff|chest\s+compressions?)\b/i.test(line);
+                    if(!group&&deliveryResuscitation)group={key:'resuscitation'};
+                    if(!group&&genericCourse.test(line))group={key:'course'};
+                    if(!group&&genericDisposition.test(line))group={key:'disposition'};
+                    const initialAdmission=context==='initial'&&/^admission(?:\s+reason)?\s*[:：]/i.test(line)
+                        ||!delayed&&!/\b(?:again|readmitted|readmission|return(?:ed)?)\b/i.test(line)&&/^(?:(?:the\s+)?(?:infant|baby|newborn)\s+(?:was\s+)?)?admitted\s+to\s+(?:BR|nursery|baby\s*room)\b/i.test(line);
+                    const isAssessment=assessmentHeading.test(line);
+                    if(isAssessment) {
+                        activeKind=null;assessmentActive=true;
+                        backgroundAssessment=/^(?:DDH\s*(?:risk|風險)|子宮內壓迫|intrauterine\s*(?:compression|constraint))/i.test(line);
+                        const timedPE=independentlyTimedPE(line);
+                        if(timedPE) {
+                            assessment.push(timedPE.initial);
+                            timedPE.later.forEach(item=>exclude(item,assessmentReason));
+                            assessmentActive=true;seenLater=true;context='later';
+                            continue;
+                        }
+                        const eligible=initialTiming&&(backgroundAssessment||explicitAdmission||explicitBirth||context==='initial'||context==='admission'||context==='birth');
+                        if(eligible)assessment.push(pointHeader?line:raw);
+                        else {exclude(raw,assessmentReason);assessmentActive=true;seenLater=true;if(!explicitContext)context='later';}
+                        continue;
+                    }
+                    if(generalBoundary.test(line)&&!group) {
+                        activeKind=null;assessmentActive=false;backgroundAssessment=false;
+                        assessment.push(raw);
+                        continue;
+                    }
+                    if(group)activeKind=group.key;
+                    const kind=group?.key||activeKind;
+                    if(kind) {
+                        const prenatal=/^prenatal/.test(kind);
+                        const closing=kind==='education'||kind==='disposition'&&!initialAdmission;
+                        const laterCourse=kind==='course';
+                        const eligible=prenatal||initialTiming&&!closing&&!laterCourse&&(
+                            explicitAdmission||explicitBirth||initialAdmission||context==='admission'||context==='birth'||kind==='resuscitation'&&context==='initial'
+                        );
+                        if(eligible) {
+                            // Use the complete qualified source when a point
+                            // heading carried the only explicit timing marker.
+                            const outputLine=pointHeader?raw:line;
+                            entries.push({kind,line:outputLine,raw,order:part.order,role:prenatal?'maternal':explicitBirth||context==='birth'||kind==='resuscitation'?'birth':'admission'});
+                            barrier();
+                        } else {
+                            exclude(raw,clinicalReason);seenLater=true;context='later';
+                        }
+                        continue;
+                    }
+                    if(assessmentActive) {
+                        if(!initialTiming||context==='later'&&!backgroundAssessment&&!explicitAdmission&&!explicitBirth) {
+                            exclude(raw,assessmentReason);assessmentActive=true;seenLater=true;context='later';
+                        } else assessment.push(raw);
+                    } else if(context==='admission'||context==='birth') {
+                        if(delayed){exclude(raw,clinicalReason);seenLater=true;context='later';}
+                        else {
+                            entries.push({kind:context==='birth'?'resuscitation':'course',line:raw,raw,order:part.order,role:context});
+                            barrier();
+                        }
+                    } else assessment.push(raw);
+                }
+            }
+            return {entries,assessmentSource:assessment.join('\n'),excluded};
+        }
+
+        function narrativeRecordGroups(entries) {
+            return Object.fromEntries(CLINICAL_SOURCE_GROUPS.map(group=>[group.key,entries.filter(item=>item.kind===group.key).map(item=>item.line)]));
+        }
+        function admissionPEContext(data,peFindings,scope) {
+            const assessmentData={...data,...parseRecordedAssessments(scope.assessmentSource)};
+            const deferred=peFindings.filter(finding=>{
+                const name=finding.replace(/\s*\([^)]*\)/g,'').trim();
+                const literal=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+                const pattern=new RegExp('\\b'+literal+'\\b','i');
+                return pattern.test(data.sourcePE||'')&&!pattern.test(assessmentData.sourcePE||'');
+            });
+            const conflicts=collectPEConflicts(data,deferred);
+            return {assessmentData,findings:peFindings.filter(finding=>!deferred.includes(finding)),deferred,conflicts};
+        }
+        function renderNarrativeRecords(entries) {
+            return entries.map(item=>narrativeClinicalRecord(item.line,item.kind)).filter(Boolean).join(' ');
+        }
+        function narrativeBackground(data) {
+            const parts=[narrativeBirthText(data)];
+            if(/^\d+\s*(?:->|to)\s*\d+$/.test(String(data.apgar||'')))parts.push(outputApgarText(data));
+            return parts.filter(Boolean).join(' ');
+        }
+        function narrativeMaternalParagraph(data,entries) {
             const maternalSources=[data.gbsSource,data.iapSource].filter(Boolean).map(normalizeAssessmentText).join('\n');
-            maternal.push(render(entries.filter(item=>/^prenatal/.test(item.kind)&&!maternalSources.includes(normalizeAssessmentText(item.line)))));
-            const atBirth=render(entries.filter(item=>item.kind==='resuscitation'||/^admi(?:tted|ssion)\b/i.test(item.line)));
-            const isClosing=item=>/^(?:discharg(?:e|ed)|condition at discharge|follow[- ]?up|OPD|MBD)\b/i.test(item.line);
-            const courseEntries=entries.filter(item=>!/^prenatal/.test(item.kind)&&item.kind!=='resuscitation'&&!/^admi(?:tted|ssion)\b/i.test(item.line)&&!isClosing(item));
-            // Sort only when every independent statement has one explicit day
-            // on the same scale. Otherwise retain source order, with no inferred
-            // timestamps or causal links. A long course paragraph stays intact.
-            const dated=courseEntries.map(item=>({...item,days:[...item.line.matchAll(/\bon day\s+(\d+)(\s+of life)?(?=[.,;]|\s*$)/gi)].map(match=>({number:Number(match[1]),anchor:match[2]?'life':'unspecified'}))}));
-            const sameScale=dated.length>1&&dated.every(item=>item.days.length===1&&!/;|\.\s+[A-Z]/.test(item.line))&&new Set(dated.map(item=>item.days[0].anchor)).size===1;
-            const ordered=sameScale?dated.sort((a,b)=>a.days[0].number-b.days[0].number):courseEntries;
-            const course=render(ordered), closing=render(entries.filter(isClosing));
-            return [background.filter(Boolean).join(' '),maternal.filter(Boolean).join(' '),[atBirth,narrativePE(data,peFindings,records)].filter(Boolean).join(' '),course,closing].filter(Boolean).join('<br><br>');
+            const prenatal=renderNarrativeRecords(entries.filter(item=>/^prenatal/.test(item.kind)&&!maternalSources.includes(normalizeAssessmentText(item.line))));
+            return [narrativeMaternalText(data),narrativePerinatalText(data),prenatal].filter(Boolean).join(' ');
         }
         function generateNarrativeReview(data,peFindings,kind='discharge') {
-            const records=getClinicalSourceRecords(data), prompts=[];
-            if(kind==='discharge'){
-                const hasCourse=records.course.some(line=>line.replace(/^[^:]+:/,'').trim())||records.treatment.some(line=>line.replace(/^[^:]+:/,'').trim());
-                const hasDisposition=[...records.disposition,...records.course].some(line=>/\b(?:discharg(?:e|ed)|follow[- ]?up|OPD|transferred|MBD)\b/i.test(line)&&!/:\s*$/.test(line));
-                if(!hasCourse) prompts.push('尚未提供完整住院經過；請依實際紀錄補充病程與治療反應。');
-                if(!hasDisposition) prompts.push('尚未提供出院狀態與後續安排；請在完成出院摘要前補入。');
+            const prompts=[], sections=[];
+            if(kind==='summary'){
+                const scope=getNarrativeAdmissionScope(data), groups=new Map(), seen=new Set();
+                for(const item of scope.excluded){
+                    const key=item.reason+'\n'+item.raw;
+                    if(!item.raw||seen.has(key))continue;
+                    seen.add(key);
+                    if(!groups.has(item.reason))groups.set(item.reason,[]);
+                    groups.get(item.reason).push(item.raw);
+                }
+                for(const [reason,rows] of groups)sections.push(`<p class="mt-2"><strong>${escapeHtml(reason)}</strong><br>${rows.map(raw=>escapeHtml(raw).replace(/\n/g,'<br>')).join('<br>')}</p>`);
+                const peContext=admissionPEContext(data,peFindings,scope);
+                if(peContext.deferred.length)sections.push(`<p class="mt-2"><strong>手動 PE 的入院時點待確認</strong><br>${escapeHtml(joinOxford(peContext.deferred))}：同項來源位於後續或時點未明的評估；手動勾選不會將它改寫為入院時所見，請核對原文與勾選。</p>`);
+            }else{
+                const records=getClinicalSourceRecords(data), entries=narrativeClinicalEntries(data,records);
+                const hasCare=entries.some(item=>['course','labs','treatment','education'].includes(item.kind)&&item.line.replace(/^[^:]+:/,'').trim());
+                const hasDisposition=entries.some(item=>/\b(?:discharg(?:e|ed)|follow[- ]?up|OPD|transferred|MBD)\b/i.test(item.line)&&!/:\s*$/.test(item.line));
+                if(!hasCare)prompts.push('尚未提供 BR 照護或離室前觀察；有紀錄時請補入。');
+                if(!hasDisposition)prompts.push('尚未提供 BR 離室狀態與出院安排；請補入實際紀錄。');
             }
-            const sections=[];
-            if(prompts.length) sections.push(`<p>${prompts.map(escapeHtml).join(' ')}</p>`);
+            if(prompts.length)sections.unshift(`<p>${prompts.map(escapeHtml).join(' ')}</p>`);
             const plans=outputSelectedPlans(data,peFindings);
-            if(plans) sections.push(`<p class="mt-2"><strong>已選取的評估／處置計畫</strong><br>${plans}</p>`);
+            if(plans)sections.push(`<p class="mt-2"><strong>已選取的評估／處置計畫</strong><br>${plans}</p>`);
             const education=kind==='discharge'?outputEducationPlan(peFindings):'';
-            if(education) sections.push(`<p class="mt-2"><strong>衛教準備</strong><br>${education}</p>`);
+            if(education)sections.push(`<p class="mt-2"><strong>衛教準備</strong><br>${education}</p>`);
             return sections.length?`<h3 class="font-semibold text-amber-900 mb-1">待確認事項（不包含在複製內容）</h3>${sections.join('')}`:'';
         }
         function updateNarrativeReviews(data,peFindings=[]) {
@@ -1626,7 +1786,17 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         }
 
         function generateSummary(data, peFindings) {
-            return generateNarrative(data,peFindings);
+            // An admission note describes the information available at birth
+            // and initial BR admission, not the later nursery/discharge course.
+            const scope=getNarrativeAdmissionScope(data), entries=scope.entries;
+            const peContext=admissionPEContext(data,peFindings,scope), {assessmentData}=peContext;
+            const records=narrativeRecordGroups(entries);
+            const arrival=renderNarrativeRecords(entries.filter(item=>item.kind==='resuscitation'||item.kind==='disposition'));
+            const initialCare=renderNarrativeRecords(entries.filter(item=>!/^prenatal/.test(item.kind)&&!['resuscitation','disposition'].includes(item.kind)));
+            const timingConflict=peContext.conflicts.length?`${hlSource('PE source conflict: '+joinOxford(peContext.conflicts))}. Manual selection indicates presence, while a supplied examination outside the admission-time record is negative or conflicting. Admission-time status is not established; please reconcile the timing and sources.`:'';
+            return [narrativeBackground(data),narrativeMaternalParagraph(data,entries),
+                [arrival,narrativePE(assessmentData,peContext.findings,records),timingConflict].filter(Boolean).join(' '),initialCare]
+                .filter(Boolean).join('<br><br>');
         }
 
         // ============================================================
@@ -1671,7 +1841,22 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         // GENERATE DISCHARGE SUMMARY
         // ============================================================
         function generateDischargeSummary(data, peFindings) {
-            return generateNarrative(data,peFindings);
+            // A discharge note adds the recorded nursery observations, care,
+            // and actual discharge arrangements to the relevant background.
+            const records=getClinicalSourceRecords(data), entries=narrativeClinicalEntries(data,records);
+            const isAdmission=item=>/^admi(?:tted|ssion)\b/i.test(item.line);
+            const isClosing=item=>/^(?:discharg(?:e|ed)|condition at discharge|follow[- ]?up|OPD|MBD)\b/i.test(item.line);
+            const initialCare=renderNarrativeRecords(entries.filter(item=>item.kind==='resuscitation'||isAdmission(item)));
+            const courseEntries=entries.filter(item=>!/^prenatal/.test(item.kind)&&item.kind!=='resuscitation'&&!isAdmission(item)&&!isClosing(item));
+            // Reorder only independent single-day statements sharing the same
+            // explicit time scale; otherwise preserve source order and meaning.
+            const dated=courseEntries.map(item=>({...item,days:[...item.line.matchAll(/\bon day\s+(\d+)(\s+of life)?(?=[.,;]|\s*$)/gi)].map(match=>({number:Number(match[1]),anchor:match[2]?'life':'unspecified'}))}));
+            const sameScale=dated.length>1&&dated.every(item=>item.days.length===1&&!/;|\.\s+[A-Z]/.test(item.line))&&new Set(dated.map(item=>item.days[0].anchor)).size===1;
+            const course=renderNarrativeRecords(sameScale?dated.sort((a,b)=>a.days[0].number-b.days[0].number):courseEntries);
+            const closing=renderNarrativeRecords(entries.filter(isClosing));
+            return [narrativeBackground(data),narrativeMaternalParagraph(data,entries),
+                [initialCare,narrativePE(data,peFindings,records)].filter(Boolean).join(' '),course,closing]
+                .filter(Boolean).join('<br><br>');
         }
 
         // ============================================================
