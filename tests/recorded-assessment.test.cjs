@@ -248,7 +248,7 @@ for (const [campus, expectedInterval] of [['tpc', /every 2 hours \(Q2H\)/], ['tt
       assert.match(text, /oligohydramnios/i, `${campus}/${name}: risk retained`);
       assert.match(text, /left preauricular pit/i, `${campus}/${name}: raw examination retained`);
     });
-    assert.match(toText(outputs.discharge), expectedInterval, `${campus}: established HC interval retained`);
+    assert.match(toText(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'discharge')), expectedInterval, `${campus}: established HC interval retained outside the copied narrative`);
   });
 }
 
