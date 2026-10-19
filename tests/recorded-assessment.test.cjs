@@ -156,14 +156,18 @@ test('raw PE grade and laterality are preserved across the three narratives with
   noUnsupportedHipNormal(outputs);
 });
 
-test('recorded PE findings do not infer oxygen treatment, resolution, or arranged outpatient follow-up', () => {
+test('recorded PE keeps respiratory findings factual while positive hip signs restore only the discharge DDH follow-up template', () => {
   const app = loadApp();
   const outputs = app.render(app.parse(`${BASE}
 PE: Respiratory distress with nasal flaring; Fever(+); Ortolani(+)`));
   narrativeAssertions(outputs, (text, name) => {
     assert.match(text, /nasal flaring/i, `${name}: raw finding retained`);
     assert.match(text, /Ortolani/i, `${name}: raw hip finding retained`);
-    assert.doesNotMatch(text, /O2 hood was provided|weaned to room air|resolved without intervention|outpatient follow-up examination was arranged|Free flow oxygen\(\+\)/i, `${name}: no treatment or completed follow-up inferred solely from raw PE`);
+    assert.doesNotMatch(text, /O2 hood was provided|weaned to room air|resolved without intervention|Free flow oxygen\(\+\)/i, `${name}: raw PE is not a selection of a respiratory or fever course template`);
+    if (name !== 'discharge') assert.doesNotMatch(text, /outpatient follow-up examination was arranged/i,
+      `${name}: no completed follow-up inferred solely from raw PE`);
+    else assert.match(text, /outpatient follow-up examination was arranged/i,
+      'definite positive hip PE restores the original discharge-specific DDH follow-up sentence');
   });
 });
 
@@ -248,7 +252,12 @@ for (const [campus, expectedInterval] of [['tpc', /every 2 hours \(Q2H\)/], ['tt
       assert.match(text, /oligohydramnios/i, `${campus}/${name}: risk retained`);
       assert.match(text, /left preauricular pit/i, `${campus}/${name}: raw examination retained`);
     });
-    assert.match(toText(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'discharge')), expectedInterval, `${campus}: established HC interval retained outside the copied narrative`);
+    assert.match(toText(outputs.discharge), expectedInterval, `${campus}: original selected HC monitoring sentence is restored in discharge`);
+    assert.match(toText(outputs.discharge), /head circumference was monitored/i);
+    assert.match(toText(outputs.discharge), /No significant interval increase was observed/i);
+    assert.match(toText(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'summary')), expectedInterval,
+      `${campus}: admission still keeps the selected monitoring plan outside its initial facts`);
+    assert.equal(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'discharge'), '');
   });
 }
 

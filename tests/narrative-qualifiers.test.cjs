@@ -63,7 +63,8 @@ test('narrative qualifiers: a cancelled appointment stays cancelled rather than 
   const { outputs, reviews } = render(`${BASE}\nOPD follow-up on 2026-10-26 was cancelled`);
   for (const name of ['summary', 'discharge']) {
     assert.match(name === 'summary' ? reviews.summary : outputs[name], /OPD follow-up on 2026-10-26 was cancelled/);
-    assert.doesNotMatch(outputs[name], /follow-up was (?:planned|scheduled|arranged)/i);
+    assert.doesNotMatch(outputs[name], /follow-up was (?:planned|scheduled|arranged)|scheduled MBD and OPD follow-up/i,
+      'a cancelled supplied appointment overrides the corresponding default follow-up sentence');
   }
   assert.doesNotMatch(outputs.summary, /2026-10-26|follow-up/i);
 });
@@ -79,14 +80,18 @@ test('narrative qualifiers: days of life and days of antibiotic treatment are no
   assert.doesNotMatch(outputs.summary, /antibiotics|fever resolved/i);
 });
 
-test('narrative qualifiers: alternative and explicitly negative delivery assistance stays consistent in all three narratives', () => {
+test('narrative qualifiers: delivery alternatives stay in admission and consultation while discharge omits the birth background', () => {
   const alternate = render('Male newborn\nGA 39 weeks\nBW 3200 gm\nNSD, vacuum or forceps').outputs;
   const negative = render('Male newborn\nGA 39 weeks\nBW 3200 gm\nNSD, painless(-)').outputs;
-  for (const name of ['summary', 'consultation', 'discharge']) {
+  for (const name of ['summary', 'consultation']) {
     assert.equal((alternate[name].match(/NSD, vacuum or forceps/g) || []).length, 1, `${name}: retain the alternative source once`);
     assert.doesNotMatch(alternate[name], /with vacuum assistance|and forceps assistance/i);
     assert.match(negative[name], /Painless labor was not used/);
     assert.doesNotMatch(negative[name], /with painless labor/i);
+  }
+  for (const discharge of [alternate.discharge, negative.discharge]) {
+    assert.doesNotMatch(discharge, /NSD|vacuum|forceps|painless labor/i,
+      'the restored BR discharge template does not repeat delivery details');
   }
 });
 
@@ -96,17 +101,29 @@ test('narrative qualifiers: corrected birth measurements retain both values with
   assert.equal(data.gaWeeks, null);
   assert.equal(data.bw, '?');
   for (const [name, text] of Object.entries(outputs)) {
+    if (name === 'discharge') {
+      assert.doesNotMatch(text, /GA 39 weeks|38 weeks|BW 3200 gm|3100 gm|birth weight|born[^.]*weeks/i,
+        'birth correction details stay in their admission, consultation and diagnosis documents');
+      continue;
+    }
     assert.match(text, /GA 39 weeks, corrected to 38 weeks/, `${name}: complete GA correction`);
     assert.match(text, /BW 3200 gm, corrected to 3100 gm/, `${name}: complete weight correction`);
     assert.doesNotMatch(text, /born[^.]*at 39 weeks|birth weight was 3200 gm|# Term infant/i, `${name}: the original value is not stated as current`);
   }
 });
 
-test('narrative qualifiers: an additional pending IAP record is retained once beside the documented adequate entry', () => {
-  const { outputs } = render(`${BASE}\nGBS(+)\nComplete IAP\nIAP pending`);
-  for (const name of ['summary', 'discharge']) {
-    assert.match(outputs[name], /intrapartum antibiotic prophylaxis was documented as adequate/i);
-    assert.equal((outputs[name].match(/pending/gi) || []).length, 1, `${name}: preserve the additional status without duplicating it`);
-    assert.match(outputs[name], /additional IAP entry/i);
-  }
+test('narrative qualifiers: additional pending IAP remains in maternal documents without adding maternal history to discharge', () => {
+  const { data, outputs } = render(`${BASE}\nGBS(+)\nComplete IAP\nIAP pending`);
+  assert.match(data.iapSource, /Complete IAP/);
+  assert.match(data.iapSource, /IAP pending/);
+  assert.match(outputs.summary, /intrapartum antibiotic prophylaxis was documented as adequate/i);
+  assert.match(outputs.summary, /additional IAP entry/i);
+  assert.match(outputs.consultation, /IAP: adequate, as documented/i);
+  assert.equal((outputs.summary.match(/pending/gi) || []).length, 1,
+    'admission retains the original one-copy narrative qualifier requirement');
+  // Consultation already exposes this source in its IAP and prenatal fields;
+  // restoring discharge does not redefine that unchanged document's layout.
+  assert.match(outputs.consultation, /Complete IAP/);
+  assert.match(outputs.consultation, /IAP pending/);
+  assert.doesNotMatch(outputs.discharge, /Complete IAP|IAP pending|additional IAP entry|intrapartum antibiotic prophylaxis/i);
 });
