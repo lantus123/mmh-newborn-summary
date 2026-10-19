@@ -12,6 +12,9 @@ Single-page client-side tool: 貼入產房原始紀錄 → 即時生成診斷、
 - `PE:`／`Physical examination:`／`理學檢查:` 的自由文字保留分級、左右側及補充描述。已標示的 Plan、Maternal history 等段落不作為新生兒檢查結果。
 - 不明格式、共同否定、條件語句及限定文字以原文保留，解析列提示核對；文字以 HTML escaping 顯示。
 - 原文 PE 與手動 checkbox 維持獨立，原文所見不會自行觸發 checkbox 的病程模板。DDH 結果本身不再產生「髖關節正常」或「已安排回診」的推定敘述。
+- PE 區塊內的 `Newborn reflexes` 子項目會保留；Plan、Newborn history 等章節邊界仍適用。
+- `Barlow(+) or Ortolani(+)` 等替代關係保留原文並提示核對，不會改寫成兩項確定陽性；以 `and` 明確並列的陽性維持正常判讀。
+- 原文同項 PE 明確陰性或前後矛盾，卻手動勾選陽性時，四個分頁與解析列會提示來源衝突。取消勾選或修正原文後重新計算，Reset 清除提示；不自行判定哪一方正確。
 
 ### 本機功能驗證
 
@@ -19,9 +22,16 @@ Single-page client-side tool: 貼入產房原始紀錄 → 即時生成診斷、
 
 ```bash
 node tests/recorded-assessment.test.cjs
+node tests/recorded-assessment-followup.test.cjs
 ```
 
 測試使用 Node 內建 `node:test`／`vm` 與最小 DOM，載入真正的 HTML application script。案例均為合成資料，涵蓋各輸出、清除重填、段落邊界與兩院區 HC 設定。這是程式功能驗證；未代替正式站瀏覽器驗收。
+
+### 驗證範圍
+
+本次修正聚焦 DDH／PE 紀錄的保留與語意。先前驗收發現的 GBS／GDM／PROM 解析、GA／BW 格式、固定處置及正常結果模板、換貼資料後自動感染評估勾選殘留，仍需後續修正。DDH／PE 測試通過不代表整份摘要的所有欄位均已通過驗收。
+
+候選版本的實際瀏覽器驗收尚未完成：測試瀏覽器的網址安全政策阻擋本機 HTML。正式站的舊版本操作檢查不能替代候選版；手機及 iOS Safari 尚未驗證。
 
 ## 多院區 — URL 參數切換
 
