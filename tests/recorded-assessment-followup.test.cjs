@@ -31,6 +31,15 @@ function eachTab(outputs, check) {
   for (const tab of Object.keys(TAB_IDS)) check(toText(outputs[tab]), tab);
 }
 
+function eachNarrative(outputs, check) {
+  for (const tab of ['summary', 'consultation', 'discharge']) check(toText(outputs[tab]), tab);
+}
+
+function noRiskAppendix(text) {
+  assert.doesNotMatch(text, /Risk factors and examination findings|DDH risk factors|Intrauterine compression signs/i,
+    'the requested diagnosis list has no appended risk-factor/examination source section');
+}
+
 function currentUI(app) {
   return {
     statusHTML: app.document.getElementById('parseStatus').innerHTML,
@@ -47,11 +56,18 @@ function assertTraceablePEWarning(ui, findingPattern, sourcePattern) {
   assert.match(toText(peWarning[0]), CONFLICT, 'the warning badge must describe the PE conflict');
   for (const [tab, text] of Object.entries(ui.tabs)) {
     const match = CONFLICT.exec(text);
+    if (tab === 'diagnosis' && !match) {
+      noRiskAppendix(text);
+      assert.doesNotMatch(text, findingPattern,
+        'a conflicted finding must be omitted from diagnosis or explicitly marked as a conflict');
+      continue;
+    }
     assert.ok(match, `${tab}: the copied narrative itself must contain the conflict warning`);
     const nearby = text.slice(Math.max(0, match.index - 180), match.index + match[0].length + 220);
     assert.match(nearby, findingPattern, `${tab}: the warning must identify the finding in conflict`);
     assert.match(nearby, /manual|手動/i, `${tab}: the warning must identify the manual result as a source of disagreement`);
-    assert.match(text, sourcePattern, `${tab}: the original negative remains traceable`);
+    if (tab !== 'diagnosis') assert.match(text, sourcePattern, `${tab}: the original negative remains traceable`);
+    else noRiskAppendix(text);
   }
 }
 
@@ -74,14 +90,20 @@ function checkMurmur(app, checked) {
   return manual;
 }
 
-test('follow-up: Newborn reflexes within PE preserves weak suck and asymmetric Moro in all four tabs', () => {
+test('follow-up: Newborn reflexes preserves weak suck and asymmetric Moro in the narratives without inventing an etiologic diagnosis', () => {
   const app = loadApp();
-  const outputs = app.render(app.parse(`${BASE}\nPE:\nNewborn reflexes: weak suck; asymmetric Moro reflex`));
-  eachTab(outputs, (text, tab) => {
+  const data = app.parse(`${BASE}\nPE:\nNewborn reflexes: weak suck; asymmetric Moro reflex`);
+  assert.match(data.sourcePE, /weak suck/i);
+  assert.match(data.sourcePE, /asymmetric Moro reflex/i);
+  const outputs = app.render(data);
+  eachNarrative(outputs, (text, tab) => {
     assert.match(text, /weak suck/i, `${tab}: weak suck was supplied as an examination finding`);
     assert.match(text, /asymmetric Moro reflex/i, `${tab}: the reflex finding must survive the subheading`);
     assert.doesNotMatch(text, /Physical examination findings were not documented/i, `${tab}: supplied PE cannot become an absent-examination statement`);
   });
+  noRiskAppendix(toText(outputs.diagnosis));
+  assert.doesNotMatch(toText(outputs.diagnosis), /#[^\n]*(?:hypotonia|brachial plexus|neurologic injury)/i,
+    'these observed reflex findings do not establish a specific underlying diagnosis');
 });
 
 test('follow-up: preserving Newborn reflexes does not absorb Newborn history or conditional Plan findings', () => {
@@ -94,47 +116,68 @@ A previous assessment reported Barlow(+), HISTORY_ONLY_SENTINEL.
 Plan:
 If Ortolani(+), PLAN_ONLY_SENTINEL.`);
   assert.equal(data.ddhPe.length, 0, 'history and conditional-plan test results must not become current definite-positive hip findings');
-  eachTab(app.render(data), (text, tab) => {
+  assert.match(data.sourcePE, /weak suck/i);
+  assert.match(data.sourcePE, /asymmetric Moro reflex/i);
+  const outputs = app.render(data);
+  eachNarrative(outputs, (text, tab) => {
     assert.match(text, /weak suck/i, `${tab}: the genuine PE remains present`);
     assert.match(text, /asymmetric Moro reflex/i, `${tab}: the genuine PE remains complete`);
     assert.doesNotMatch(text, /HISTORY_ONLY_SENTINEL|PLAN_ONLY_SENTINEL/i, `${tab}: excluded blocks do not re-enter the examination narrative`);
     assert.doesNotMatch(text, /positive Barlow|positive Ortolani/i, `${tab}: no current positive is invented from the excluded blocks`);
   });
+  noRiskAppendix(toText(outputs.diagnosis));
+  assert.doesNotMatch(toText(outputs.diagnosis), /HISTORY_ONLY_SENTINEL|PLAN_ONLY_SENTINEL|positive Barlow|positive Ortolani|#[^\n]*(?:hypotonia|brachial plexus|neurologic injury)/i,
+    'excluding the risk appendix cannot create positive diagnoses from history or conditional plans');
 });
 
-test('follow-up: Barlow positive OR Ortolani positive preserves the unresolved alternative in all four tabs', () => {
+test('follow-up: Barlow positive OR Ortolani positive stays unresolved in the narratives and creates no definite diagnosis', () => {
   const app = loadApp();
   const data = app.parse(`${BASE}\nHip PE: Barlow(+) or Ortolani(+)`);
   assert.equal(data.ddhPe.length, 0, 'neither individual test is established as definitely positive by an unresolved OR relation');
-  eachTab(app.render(data), (text, tab) => {
+  const outputs = app.render(data);
+  eachNarrative(outputs, (text, tab) => {
     assert.match(text, /Barlow/i, `${tab}: the first candidate test is identified`);
     assert.match(text, /Ortolani/i, `${tab}: the second candidate test is identified`);
     const preservesSource = /Barlow\s*\(\+\)\s+or\s+Ortolani\s*\(\+\)/i.test(text);
     assert.ok(preservesSource || REVIEW.test(text), `${tab}: preserve the original alternative or explicitly request confirmation`);
     assert.doesNotMatch(text, /documented positive Barlow's sign and positive Ortolani's sign/i, `${tab}: OR cannot be rewritten as two definite positives`);
   });
+  const diagnosis = toText(outputs.diagnosis);
+  noRiskAppendix(diagnosis);
+  assert.doesNotMatch(diagnosis, /#[^\n]*(?:Barlow|Ortolani|DDH|developmental dysplasia)/i,
+    'an unresolved OR does not create either definite finding or a DDH diagnosis');
 });
 
 test('follow-up: independent positives joined by AND remain definite positives', () => {
   const app = loadApp();
   const data = app.parse(`${BASE}\nHip PE: Barlow(+) and Ortolani(+)`);
   assert.deepEqual(Array.from(data.ddhPe).sort(), ["positive Barlow's sign", "positive Ortolani's sign"].sort());
-  eachTab(app.render(data), (text, tab) => {
+  const outputs = app.render(data);
+  eachNarrative(outputs, (text, tab) => {
     assert.match(text, /Barlow/i, `${tab}: Barlow positive remains available`);
     assert.match(text, /Ortolani/i, `${tab}: Ortolani positive remains available`);
   });
+  const diagnosis = toText(outputs.diagnosis);
+  noRiskAppendix(diagnosis);
+  assert.match(diagnosis, /#[^\n]*positive Barlow/i, 'a definite raw positive finding remains a diagnosis-list item');
+  assert.match(diagnosis, /#[^\n]*positive Ortolani/i);
 });
 
 test('follow-up: the shared DDH parser also preserves OR between alternative risk factors', () => {
   const app = loadApp();
   const data = app.parse(`${BASE}\nDDH risk factors: Breech(+) or Oligohydramnios(+)`);
   assert.equal(data.ddhRisk.length, 0, 'alternative risk factors must not both enter the definite-positive collection');
-  eachTab(app.render(data), (text, tab) => {
+  const outputs = app.render(data);
+  eachNarrative(outputs, (text, tab) => {
     assert.match(text, /breech/i, `${tab}: first alternative retained`);
     assert.match(text, /oligohydramnios/i, `${tab}: second alternative retained`);
     const preservesSource = /Breech\s*\(\+\)\s+or\s+Oligohydramnios\s*\(\+\)/i.test(text);
     assert.ok(preservesSource || REVIEW.test(text), `${tab}: the unresolved risk-factor relationship is visible`);
   });
+  const diagnosis = toText(outputs.diagnosis);
+  noRiskAppendix(diagnosis);
+  assert.doesNotMatch(diagnosis, /breech|oligohydramnios|#[^\n]*(?:DDH|developmental dysplasia)/i,
+    'risk alternatives are not diagnoses or a second risk appendix');
 });
 
 test('follow-up: source-negative/manual-positive murmur warns in all four tabs and clears when unchecked', async () => {
@@ -150,7 +193,10 @@ test('follow-up: source-negative/manual-positive murmur warns in all four tabs a
   const resolvedUI = currentUI(app);
   assert.doesNotMatch([resolvedUI.status, ...Object.values(resolvedUI.tabs)].join('\n'), CONFLICT, 'a cleared manual selection cannot leave a stale conflict warning');
   for (const [tab, text] of Object.entries(resolvedUI.tabs)) {
-    assert.match(text, /Heart murmur(?:\(-\)| was absent)/i, `${tab}: unchecking manual does not delete the recorded negative`);
+    if (tab === 'diagnosis') {
+      noRiskAppendix(text);
+      assert.doesNotMatch(text, /#[^\n]*heart murmur/i, 'source-negative alone is not a positive diagnosis');
+    } else assert.match(text, /Heart murmur(?:\(-\)| was absent)/i, `${tab}: unchecking manual does not delete the recorded negative`);
     assert.doesNotMatch(text, /Heart murmur was noted|notable for heart murmur|Physical examination documented Heart murmur(?:[.,\n]|$)|# Heart murmur(?:\n|$)/i, `${tab}: the unchecked manual positive is removed`);
   }
 });
@@ -207,7 +253,10 @@ test('follow-up: replacing source negative with positive resolves the conflict t
   const resolvedUI = currentUI(app);
   assert.doesNotMatch([resolvedUI.status, ...Object.values(resolvedUI.tabs)].join('\n'), CONFLICT, 'matching source/manual findings remove the previous conflict warning');
   for (const [tab, text] of Object.entries(resolvedUI.tabs)) {
-    assert.match(text, /Heart murmur(?:\(\+\)| was present)/i, `${tab}: the replacement positive source is retained`);
+    if (tab === 'diagnosis') {
+      assert.match(text, /# Heart murmur/i, 'the true positive remains a diagnosis-list item after source replacement');
+      noRiskAppendix(text);
+    } else assert.match(text, /Heart murmur(?:\(\+\)| was present)/i, `${tab}: the replacement positive source is retained`);
     assert.doesNotMatch(text, /Heart murmur\(-\)/i, `${tab}: the superseded negative source is removed`);
   }
   for (const tab of ['summary', 'consultation', 'discharge']) {
@@ -231,7 +280,9 @@ test('follow-up review: unrelated OR leaves a definite negative intact, while ne
   const conflictingUI = currentUI(app);
   assertTraceableMurmurWarning(conflictingUI);
   for (const [tab, text] of Object.entries(conflictingUI.tabs)) {
-    assert.match(text, /abdominal distension or organomegaly\?/i, `${tab}: the unrelated uncertain observation is also retained`);
+    if (tab === 'diagnosis') assert.doesNotMatch(text, /#[^\n]*(?:abdominal distension|organomegaly)/i,
+      'the unrelated uncertain observation is not a definite diagnosis');
+    else assert.match(text, /abdominal distension or organomegaly\?/i, `${tab}: the unrelated uncertain observation is also retained`);
   }
 
   // This OR qualifies the murmur result itself, so it cannot establish a negative.
@@ -241,7 +292,11 @@ test('follow-up review: unrelated OR leaves a definite negative intact, while ne
   const unresolvedUI = currentUI(app);
   assert.doesNotMatch([unresolvedUI.status, ...Object.values(unresolvedUI.tabs)].join('\n'), CONFLICT, 'an unresolved negative-or-unknown source must not be reported as a definite source/manual conflict');
   for (const [tab, text] of Object.entries(unresolvedUI.tabs)) {
-    assert.match(text, /Heart murmur negative, or unknown/i, `${tab}: the complete uncertain source remains traceable`);
+    if (tab === 'diagnosis') {
+      noRiskAppendix(text);
+      assert.match(text, /# Heart murmur/i, 'the still-selected manual finding is retained without importing an uncertain source appendix');
+      assert.doesNotMatch(text, /#[^\n]*(?:abdominal distension|organomegaly)/i);
+    } else assert.match(text, /Heart murmur negative, or unknown/i, `${tab}: the complete uncertain source remains traceable`);
   }
 });
 
@@ -258,7 +313,11 @@ test('follow-up review: hernia conflict detection distinguishes opposite-side fr
   const differentSideUI = currentUI(app);
   assert.doesNotMatch([differentSideUI.status, ...Object.values(differentSideUI.tabs)].join('\n'), CONFLICT, 'right-side absence does not contradict a left-side manual finding');
   for (const [tab, text] of Object.entries(differentSideUI.tabs)) {
-    assert.match(text, /right inguinal hernia(?:\(-\)| was absent)/i, `${tab}: the right-sided negative source is retained`);
+    if (tab === 'diagnosis') {
+      noRiskAppendix(text);
+      assert.doesNotMatch(text, /#[^\n]*inguinal hernia[^\n]*(?:\brt\b|\bright\b)/i,
+        'right-side absence is not a positive right hernia diagnosis');
+    } else assert.match(text, /right inguinal hernia(?:\(-\)| was absent)/i, `${tab}: the right-sided negative source is retained`);
     assert.match(text, /Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, `${tab}: the left-sided manual finding is retained`);
   }
 
@@ -267,5 +326,5 @@ test('follow-up review: hernia conflict detection distinguishes opposite-side fr
   assert.equal(hernia.checked, true);
   assert.equal(left.checked, true);
   assert.equal(app.errors.length, 0);
-  assertTraceablePEWarning(currentUI(app), /Inguinal hernia\s*\(lt\)/i, /left inguinal hernia\(-\)/i);
+  assertTraceablePEWarning(currentUI(app), /Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, /left inguinal hernia\(-\)/i);
 });

@@ -34,7 +34,8 @@ test('narrative qualifiers: different observation times are not a source conflic
     assert.match(timed[name], /heart murmur was absent at birth/i);
     if(name === 'summary'){
       assert.doesNotMatch(timed[name], /present on day 2|murmur\(\+\)/i);
-      assert.match(timedResult.reviews.summary, /Heart murmur\(\+\) on day 2/i);
+      assert.match(timedResult.outputs.consultation, /Heart murmur\(\+\) on day 2/i);
+      assert.equal(timedResult.reviews.summary, '', 'the brief admission no longer adds a later-course review appendix');
     }else assert.match(timed[name], /heart murmur was present on day 2/i);
     assert.doesNotMatch(timed[name], /conflict/i);
     assert.match(undated[name], /conflicting/i);
@@ -51,33 +52,36 @@ test('narrative qualifiers: settings or feeding descriptions do not establish ad
     'Feeding: breastfeeding not established',
   ]) {
     const { outputs, reviews } = render(`${BASE}\n${line}`);
-    for (const name of ['summary', 'discharge']) {
-      assert.ok((name === 'summary' ? reviews.summary : outputs[name]).includes(line), `${name}: keep the qualifier with its subject in the appropriate region`);
+    for (const name of ['consultation', 'discharge']) {
+      assert.ok(outputs[name].includes(line), `${name}: keep the qualifier with its subject in the appropriate region`);
       assert.doesNotMatch(outputs[name], /support consisted of|feeding consisted of/i, `${name}: no actual administration implied`);
     }
     assert.doesNotMatch(outputs.summary, /CPAP|formula|breastfeeding/i);
+    assert.equal(reviews.summary, '');
   }
 });
 
 test('narrative qualifiers: a cancelled appointment stays cancelled rather than becoming a future follow-up plan', () => {
   const { outputs, reviews } = render(`${BASE}\nOPD follow-up on 2026-10-26 was cancelled`);
-  for (const name of ['summary', 'discharge']) {
-    assert.match(name === 'summary' ? reviews.summary : outputs[name], /OPD follow-up on 2026-10-26 was cancelled/);
+  for (const name of ['consultation', 'discharge']) {
+    assert.match(outputs[name], /OPD follow-up on 2026-10-26 was cancelled/);
     assert.doesNotMatch(outputs[name], /follow-up was (?:planned|scheduled|arranged)|scheduled MBD and OPD follow-up/i,
       'a cancelled supplied appointment overrides the corresponding default follow-up sentence');
   }
   assert.doesNotMatch(outputs.summary, /2026-10-26|follow-up/i);
+  assert.equal(reviews.summary, '');
 });
 
 test('narrative qualifiers: days of life and days of antibiotic treatment are not numerically reordered together', () => {
   const { outputs, reviews } = render(`${BASE}\nHospital course: antibiotics started on day 5 of life.\nHospital course: fever resolved on day 2 of antibiotic treatment.`);
-  for (const name of ['summary', 'discharge']) {
-    const care = name === 'summary' ? reviews.summary : outputs[name];
+  for (const name of ['consultation', 'discharge']) {
+    const care = outputs[name];
     assert.match(care, /antibiotics (?:were )?started on day 5 of life/i);
     assert.match(care, /fever resolved on day 2 of antibiotic treatment/i);
     assert.ok(care.indexOf('day 5 of life') < care.indexOf('day 2 of antibiotic treatment'), `${name}: preserve distinct time anchors and the supplied sequence`);
   }
   assert.doesNotMatch(outputs.summary, /antibiotics|fever resolved/i);
+  assert.equal(reviews.summary, '');
 });
 
 test('narrative qualifiers: delivery alternatives stay in admission and consultation while discharge omits the birth background', () => {
@@ -116,8 +120,8 @@ test('narrative qualifiers: additional pending IAP remains in maternal documents
   const { data, outputs } = render(`${BASE}\nGBS(+)\nComplete IAP\nIAP pending`);
   assert.match(data.iapSource, /Complete IAP/);
   assert.match(data.iapSource, /IAP pending/);
-  assert.match(outputs.summary, /intrapartum antibiotic prophylaxis was documented as adequate/i);
-  assert.match(outputs.summary, /additional IAP entry/i);
+  assert.match(outputs.summary, /completed intrapartum antibiotic prophylaxis|intrapartum antibiotic prophylaxis was documented as adequate/i);
+  assert.match(outputs.summary, /IAP pending|additional IAP entry/i);
   assert.match(outputs.consultation, /IAP: adequate, as documented/i);
   assert.equal((outputs.summary.match(/pending/gi) || []).length, 1,
     'admission retains the original one-copy narrative qualifier requirement');

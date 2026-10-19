@@ -1,7 +1,7 @@
 'use strict';
 
 // Synthetic acceptance for the user-approved BR document scope only.
-// Admission describes birth/perinatal context and the initial BR assessment;
+// Admission restores the original brief birth/perinatal/initial-PE template;
 // discharge uses the user's original routine BR template, with supplied BR
 // observations and explicit exceptions overriding the corresponding defaults.
 // Exact wording is not snapshotted. No transfer-workflow feature is tested here.
@@ -36,8 +36,11 @@ function preserveBirthContext(body) {
   }
 }
 
-function rawInReview(result, kind, line) {
-  assert.ok(result.reviews[kind].includes(line), `${kind}: deferred source remains verbatim in review: ${line}`);
+function rawInConsultation(result, line) {
+  const clinicalSource = line.replace(/^(?:P\.?E\.?|physical examination)\s*:\s*/i, '');
+  assert.ok(result.bodies.consultation.includes(clinicalSource),
+    `source omitted from the brief admission remains verbatim in consultation: ${line}`);
+  assert.equal(result.reviews.summary, '', 'the original admission style has no clinical-source review appendix');
 }
 
 function assertNoFullInpatientPrompt(text) {
@@ -60,7 +63,9 @@ test('BS-01: birth-only input retains admission context and produces the origina
   }
   assert.doesNotMatch(result.bodies.summary, /received.*(?:vitamin K|HBV vaccine)|feeding was well tolerated|discharged|stable condition|uneventful|unremarkable|routine care was provided/i,
     'restoring discharge defaults does not change admission facts');
-  assert.match(result.bodies.summary, /G1\s*P1\s*A0/i);
+  assert.match(result.bodies.summary, /G1\s*P1/i);
+  assert.equal(result.data.a, '0');
+  assert.match(result.bodies.consultation, /G1\s*P1\s*A0/i);
   assert.match(result.bodies.summary, /vaginal delivery|NSD/i);
   assert.match(result.bodies.summary, /APGAR/i);
   for (const part of [/^Upon admission, the infant received routine prophylaxis/i, /HBV vaccine \(IM\)/i,
@@ -75,13 +80,14 @@ test('BS-01: birth-only input retains admission context and produces the origina
   assert.equal(result.reviews.discharge, '', 'the user no longer has to provide a complete BR course to use the original template');
 });
 
-test('BS-02: admission keeps initial BR admission while later nursery course and home discharge remain in review', () => {
+test('BS-02: brief admission keeps the initial BR purpose while later nursery care and discharge remain in the clinical notes', () => {
   const result = specimen(`${BASE}\n${BR_ADMISSION}\n${CARE}\n${HOME}`);
   preserveBirthContext(result.bodies.summary);
-  assert.match(result.bodies.summary, /admitted[^.]*BR[^.]*routine newborn care/i);
+  assert.match(result.bodies.summary, /admitted[^.]*(?:BR|Baby Room)[^.]*routine newborn care/i);
   assert.doesNotMatch(result.bodies.summary, /48 hours|feeding was well tolerated|discharged home|72 hours/i);
-  rawInReview(result, 'summary', CARE);
-  rawInReview(result, 'summary', HOME);
+  rawInConsultation(result, CARE);
+  rawInConsultation(result, HOME);
+  assert.match(result.bodies.discharge, /feeding was well tolerated[^]*48 hours[^]*discharged home[^]*72 hours/i);
 });
 
 test('BS-03: discharge retains actual BR observations, counseling and home arrangement in clinical order', () => {
@@ -108,10 +114,10 @@ test('BS-04: admission and discharge serve distinct purposes when both admission
   assert.notEqual(result.bodies.summary, result.bodies.discharge,
     'both tabs cannot be the same complete narrative for an episode with later events');
   assert.match(result.bodies.summary, /APGAR/i);
-  assert.match(result.bodies.summary, /admitted[^.]*BR/i);
+  assert.match(result.bodies.summary, /admitted[^.]*(?:BR|Baby Room)/i);
   assert.doesNotMatch(result.bodies.summary, /8\.4 mg\/dL|counseled about feeding|2026-10-26|discharged home/i,
     'later BR course and closing arrangements are not initial-admission content');
-  for (const line of [laterLab, education, followup]) rawInReview(result, 'summary', line);
+  for (const line of [laterLab, education, followup]) rawInConsultation(result, line);
   assert.match(result.bodies.discharge, /8\.4 mg\/dL/i);
   assert.match(result.bodies.discharge, /counseled about feeding/i);
   assert.match(result.bodies.discharge, /2026-10-26/i);
@@ -139,17 +145,18 @@ ${HOME}`, ['Heart murmur']);
 
 });
 
-test('BS-06: maternal antibiotics and delivery-room resuscitation remain in admission and consultation without repeating discharge background', () => {
+test('BS-06: maternal antibiotics and delivery-room resuscitation remain correctly attributable in consultation without expanding either brief template', () => {
   const result = specimen(`${BASE}
 Maternal antibiotics: ampicillin 2 g IV before delivery.
 Resuscitation: CPAP for 5 minutes in the delivery room.
 ${BR_ADMISSION}`);
-  assert.match(result.bodies.summary, /maternal[^.]*ampicillin[^.]*2 g IV before delivery/i);
-  assert.match(result.bodies.summary, /CPAP[^.]*5 minutes[^.]*delivery room/i);
-  assert.match(result.bodies.summary, /admitted[^.]*BR/i);
+  assert.match(result.bodies.summary, /admitted[^.]*(?:BR|Baby Room)/i);
+  assert.match(result.bodies.consultation, /ampicillin[^.]*2 g IV before delivery/i);
+  assert.match(result.bodies.consultation, /CPAP[^.]*5 minutes[^.]*delivery room/i);
+  const records = result.app.context.getClinicalSourceRecords(result.data);
+  assert.ok(records.prenatalAntibiotics.some(line => /ampicillin 2 g IV before delivery/.test(line)));
+  assert.ok(records.resuscitation.some(line => /CPAP for 5 minutes in the delivery room/.test(line)));
   for (const kind of ['summary', 'consultation']) {
-    assert.match(result.bodies[kind], /ampicillin[^.]*2 g IV before delivery/i);
-    assert.match(result.bodies[kind], /CPAP[^.]*5 minutes[^.]*delivery room/i);
     assert.doesNotMatch(result.bodies[kind], /(?:infant|newborn)\s+(?:was given|received)[^.]*ampicillin/i,
       'maternal exposure must not be recast as infant treatment');
   }
@@ -157,26 +164,30 @@ ${BR_ADMISSION}`);
     'the original discharge style does not repeat maternal and delivery-room history');
 });
 
-test('BS-07: explicitly initial BR measurements, treatment and detailed PE remain in the admission body', () => {
+test('BS-07: detailed initial PE stays in the brief admission while initial measurements and treatment remain in consultation and discharge', () => {
   const result = specimen(`${BASE}\n${BR_ADMISSION}
 Laboratory at admission: blood glucose 38 mg/dL
 Treatment at admission: glucose gel was administered in BR.
 PE: Heart murmur(+), grade 2/6, left sternal border at BR admission.`);
-  for (const fact of [/blood glucose[^.]*38 mg\/dL/i, /glucose gel[^.]*administered in BR/i,
-    /heart murmur/i, /grade 2\/6/i, /left sternal border/i]) {
+  for (const fact of [/heart murmur/i, /grade 2\/6/i, /left sternal border/i]) {
     assert.match(result.bodies.summary, fact, `initial assessment and care are admission facts: ${fact}`);
     assert.match(`${result.bodies.discharge} ${result.reviews.discharge}`, fact,
       `initial fact is also retained or traceable for discharge: ${fact}`);
   }
-  assert.doesNotMatch(result.bodies.summary, /glucose[^.]*normalized|responded well|discharged home/i);
+  for (const fact of [/blood glucose[^.]*38 mg\/dL/i, /glucose gel[^.]*administered in BR/i]) {
+    assert.match(result.bodies.consultation, fact, `actual initial care remains in consultation: ${fact}`);
+    assert.match(result.bodies.discharge, fact, `actual initial care remains in discharge: ${fact}`);
+  }
+  assert.doesNotMatch(result.bodies.summary, /38 mg\/dL|glucose gel|glucose[^.]*normalized|responded well|discharged home/i);
+  assert.equal(result.reviews.summary, '');
 });
 
-test('BS-08: an explicitly later PE finding belongs to discharge and is traceable outside admission prose', () => {
+test('BS-08: an explicitly later PE finding stays timed in consultation and discharge without becoming an initial finding', () => {
   const laterPE = 'PE: Jaundice(+) at 48 hours of age';
   const result = specimen(`${BASE}\n${BR_ADMISSION}\n${laterPE}\n${CARE}\n${HOME}`);
   assert.doesNotMatch(result.bodies.summary, /jaundice|48 hours/i,
     'day-two jaundice must not silently become an initial physical finding');
-  rawInReview(result, 'summary', laterPE);
+  rawInConsultation(result, laterPE);
   assert.match(result.bodies.discharge, /jaundice[^.\n]{0,100}48 hours of age/i);
   assert.doesNotMatch(result.bodies.discharge, /(?:at birth|on admission)[^.\n]*jaundice|jaundice[^.\n]*(?:at birth|on admission)/i);
 
@@ -187,16 +198,18 @@ test('BS-09: a future BR discharge plan and conditional counseling remain planne
   const education = 'Education: caregivers will be counseled about feeding before discharge.';
   const result = specimen(`${BASE}\n${BR_ADMISSION}\n${planned}\n${education}`);
   assert.doesNotMatch(result.bodies.summary, /planned tomorrow|will be counseled/i);
-  for (const kind of Object.keys(BODY_IDS)) {
-    const trace = `${result.bodies[kind]} ${result.reviews[kind]}`;
+  for (const kind of ['consultation', 'discharge']) {
+    const trace = result.bodies[kind];
     assert.match(trace, /planned tomorrow if feeding remains adequate/i);
     assert.match(trace, /caregivers will be counseled/i);
     assert.doesNotMatch(result.bodies[kind], /(?:was|had been) discharged|caregivers were counseled|feeding was adequate/i,
       'future or conditional source statements do not establish completed care');
   }
+  assert.doesNotMatch(result.bodies.summary, /(?:was|had been) discharged|caregivers were counseled|feeding was adequate/i);
+  assert.equal(result.reviews.summary, '');
 });
 
-test('BS-10: bound Copy uses each document body; admission review and discharge templates clear completely on Reset', async () => {
+test('BS-10: bound Copy uses each restored document body and Reset clears the templates without review residue', async () => {
   const app = loadApp();
   const copied = [];
   app.context.navigator.clipboard = { async writeText(text) { copied.push(text); } };
@@ -211,15 +224,14 @@ test('BS-10: bound Copy uses each document body; admission review and discharge 
   for (const kind of Object.keys(BODY_IDS)) {
     const body = app.document.getElementById(BODY_IDS[kind]);
     const review = app.document.getElementById(REVIEW_IDS[kind]);
-    if (kind === 'summary') {
-      assert.equal(review.classList.contains('hidden'), false);
-      assert.ok(toText(review.innerHTML).includes(CARE), 'deferred course is inspectable');
-    } else {
-      assert.equal(review.classList.contains('hidden'), true);
-      assert.equal(review.innerHTML, '');
+    assert.equal(review.classList.contains('hidden'), true);
+    assert.equal(review.innerHTML, '');
+    if (kind === 'discharge') {
       assert.match(body.innerText, /blood culture was performed/i,
         'a selected sepsis template is part of the original discharge text and is copied');
     }
+    if (kind === 'summary') assert.match(body.innerText, /blood culture was performed/i,
+      'the restored admission includes its selected sepsis sentence');
     app.context.switchTab(kind);
     app.document.getElementById('copyActiveBtn').dispatchEvent({ type: 'click' });
     await delay(0);
@@ -255,11 +267,13 @@ test('BS-12: a first-line exam spanning birth and day two does not hide the subs
   const mixedPE = 'PE: Jaundice(-) at birth, Jaundice(+) on day 2';
   const result = specimen(`${mixedPE}\n${BASE}\n${BR_ADMISSION}`);
   preserveBirthContext(result.bodies.summary);
-  assert.match(result.bodies.summary, /admitted[^.]*BR[^.]*routine newborn care/i,
+  assert.match(result.bodies.summary, /admitted[^.]*(?:BR|Baby Room)[^.]*routine newborn care/i,
     'the actual admission event remains initial even if a later-timed source row appears first');
   assert.match(result.bodies.summary, /jaundice[^.\n]{0,70}(?:absent|\(-\))[^.\n]{0,70}at birth/i);
   assert.doesNotMatch(result.bodies.summary, /on day 2|jaundice[^.\n]{0,30}present/i);
-  assert.ok(result.reviews.summary.includes('Jaundice(+) on day 2'));
+  rawInConsultation(result, 'Jaundice(+) on day 2');
+  assert.match(result.bodies.discharge, /(?:Jaundice\s*\(\+\)|Jaundice was present)\s+on day 2/i,
+    'the unchanged discharge can retain the original timed source or its equivalent prose');
 });
 
 test('BS-13: a matching checkbox cannot promote a later-only positive PE into an initial finding', () => {
@@ -268,10 +282,8 @@ test('BS-13: a matching checkbox cannot promote a later-only positive PE into an
   assert.doesNotMatch(result.bodies.summary,
     /Physical examination findings included Jaundice|Jaundice was present|examination showed jaundice/i,
     'a matching manual checkbox cannot reintroduce the deferred day-two finding as initial PE');
-  rawInReview(result, 'summary', laterPE);
-  assert.match(result.reviews.summary, /manual|selected|checkbox|手動|勾選/i,
-    'the manual choice is traceable together with the later source');
-  assert.match(result.reviews.summary, /jaundice/i);
+  rawInConsultation(result, laterPE);
+  assert.match(result.bodies.discharge, /jaundice[^.]*48 hours of age/i);
 });
 
 test('BS-14: a later negative PE plus a positive checkbox retains conflict and timing uncertainty without inventing initial PE', () => {
@@ -285,6 +297,7 @@ test('BS-14: a later negative PE plus a positive checkbox retains conflict and t
   assert.match(result.bodies.summary,
     /(?:admission|initial)[^.\n]{0,130}(?:not established|not confirmed|uncertain|unresolved|unknown|cannot|unclear|not documented)|(?:uncertain|unresolved|unknown|cannot|unclear)[^.\n]{0,130}(?:admission|initial)|入院[^。\n]{0,80}(?:未|不明|待確認)/i,
     'the copied conflict explains that the initial finding or timing is not established');
-  rawInReview(result, 'summary', laterPE);
-  assert.match(result.reviews.summary, /manual|selected|checkbox|手動|勾選/i);
+  rawInConsultation(result, laterPE);
+  assert.match(result.bodies.summary, /manual|selected|checkbox|手動|勾選/i,
+    'the compact copyable conflict retains the manual source of disagreement');
 });

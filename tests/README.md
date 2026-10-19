@@ -30,58 +30,57 @@ MMH_TEST_APP_PATH=/absolute/path/to/baseline-index.html node tests/recorded-asse
 MMH_TEST_APP_PATH=/absolute/path/to/baseline-index.html node tests/recorded-assessment-followup.test.cjs
 ```
 
-## Current BR document contract: restored original discharge style (2026-10-19)
+## Current BR document contract: original admission/discharge style (2026-10-19)
 
-The user reviewed the original and the revised output, then explicitly requested
-that the discharge note return to its original writing and workflow. This
-contract supersedes the PR #2/#3 source-only discharge design.
+The user first requested the original discharge writing/workflow, then also
+requested: 「入摘內容也變成太複雜了，請恢復成原本的版本。我需要的就是有 finding 時要正確顯示。還有診斷下面也不需要 risk factor。」
+The original document formats are the reference; the repaired finding parsers
+remain required. The earlier PR #2/#3 source-only narrative format is superseded.
 
 | Output or region | Required behavior |
 | --- | --- |
-| BR admission body | Retain the existing birth, maternal/perinatal, initial PE and admission-time scope. Later or untimed clinical records remain in admission review. |
-| BR discharge body | Restore the original routine prophylaxis → BR care/rooming-in → feeding → bilirubin and discharge/MBD/OPD template. Do not prepend birth, maternal or delivery-room background. |
-| Discharge checkboxes | Restore the original sepsis, blood glucose, HC, respiratory and counseling template clauses, including the existing automatic sepsis checkbox. |
-| Explicit BR source | Keep actual measurements, times, findings, treatment states, refusals and disposition. A supplied record takes precedence over the matching default clause. |
-| Review and Copy | Admission review remains unchanged. Discharge no longer demands a full supplied course or repeats template clauses as uncompleted plans. Copy still copies only the current body; Reset clears all outputs and controls. |
+| BR admission body | Restore the original connected paragraph: birth/BW → maternal → PROM/MAS → APGAR → PE → selected evaluation and Baby Room ending. Do not append the later hospital course. |
+| BR discharge body | Retain PR #4's restored routine prophylaxis → selected BR care → rooming-in/feeding → bilirubin and discharge/MBD/OPD template, without a birth/maternal opening. |
+| DDH/compression/PE | Display the recorded finding, grade, laterality, negation and uncertainty correctly in the appropriate note. Missing/unknown hip PE is not a negative or normal examination. |
+| Diagnosis | Remove the lower Risk factors and examination findings appendix. Confirmed raw PE positives may join the original diagnosis-style lines; a risk, OR alternative or unknown result does not become a diagnosis. A positive hip sign is recorded as a sign, without inferring confirmed DDH. |
+| Clinical source | Explicit care/refusal/pending states take precedence over opposite matching defaults. Later PE/course remains in discharge and consultation, without becoming an initial admission observation. |
+| Review and Copy | Remove the added admission/discharge course and plan checklists. Copy copies only the active body; Reset clears all outputs and controls. |
 
-The routine discharge fixture must match the original version's complete text,
-allowing only whitespace normalization. Missing clinical-course input must not
-prevent that ordinary template from being produced. This is an intentional
-return to the user's original tool behavior, not a claim that a template proves
-an intervention occurred.
+A complete, explicitly normal fixture must reproduce the original admission
+paragraph, allowing only whitespace normalization. It includes explicit normal
+PE and negative DDH/compression/hip records, so exact comparison does not demand
+restoring the original false-negative behavior for missing records. Birth-only
+input must still produce the original routine discharge template.
 
-The current shared parsers, admission/consultation/diagnosis generators, campus
-configuration, NBC controls and selected-plan helper are outside the restoration
-implementation. No new NBC transfer workflow is introduced. The original NBC
-checkbox branch is retained only for output compatibility.
+Restoring a template is an intentional return to the user's workflow, not proof
+that the described care occurred. Shared parser repairs, consultation, campus
+configuration, controls, Copy/Reset and PR #4 discharge functions remain in scope
+for regression protection. No new NBC transfer workflow is introduced.
 
 ### Deliberate expectation changes
 
-- Birth-only discharge now requires the original routine template and forbids
-  the duplicated birth/maternal opening or missing-course prompt. Admission
-  remains factual and short.
-- Maternal screening, prenatal medication, corrected GA/BW, delivery details
-  and birth resuscitation are checked in their appropriate admission,
-  consultation and parser context. The discharge note must not repeat that
-  background merely to satisfy an old all-output assertion.
-- Original selected discharge template clauses are asserted inside the copied
-  discharge body. The same selections remain plans in admission/consultation.
-  Automatic sepsis selections follow the original discharge checkbox contract.
-- Explicit source negation, abnormal values, unstarted support, persistent
-  symptoms, declined prophylaxis, and planned/cancelled discharge still must not
-  be contradicted by an incompatible template clause.
-- DDH/compression/PE grade, laterality, uncertainty, source/manual conflicts and
-  source retention remain required. Missing hip PE must not become a normal hip
-  examination. Raw PE alone does not automatically select a treatment checkbox.
-- The admission time boundary, exact Copy body, Reset/empty state, and automatic
-  suggestion withdrawal on input change retain their established assertions.
+- Admission assertions now require the original one-paragraph order, selected
+  template clauses and Baby Room ending. They no longer require the expanded
+  narrative sections, source-only course or supplementary review checklist.
+- Later/untimed clinical records that were previously asserted in admission
+  review remain checked, with their values and states, in consultation/discharge
+  and the parser. Later PE must not become an initial finding.
+- The removed diagnosis risk section is no longer used as an all-output source
+  archive. Risk/negative/unknown/OR source is checked in notes/parser; diagnosis
+  separately forbids false positive diagnoses and retains definite raw findings.
+- Maternal status, IAP/GDM source details, corrected GA/BW, qualifier, treatment
+  state and source/manual conflict assertions remain required in their
+  appropriate document context.
+- All PR #4 discharge expectations remain unchanged. The existing new discharge
+  tests may have only their admission-side assertions updated.
 
 ## Test files
 
 | File | Purpose |
 | --- | --- |
+| `admission-template-restoration.test.cjs` | Original full admission paragraph, original selections, finding accuracy, concise diagnosis, Copy/Reset and unchanged discharge |
 | `discharge-template-restoration.test.cjs` | Original complete routine text, course-focused opening, selections, explicit-source overrides, DDH/PE, campus HC, Copy and Reset |
-| `br-document-scope.test.cjs` | Initial-admission scope, later PE, source order, independent outputs and BR care/disposition |
+| `br-document-scope.test.cjs` | Initial-admission scope, later PE/source in its applicable note, independent original templates and BR care/disposition |
 | `recorded-assessment.test.cjs` | DDH/compression/PE formats, explicit states, details and manual selections |
 | `recorded-assessment-followup.test.cjs` | PE subsections, OR/AND and source/manual conflicts across four tabs and events |
 | `core-state-acceptance.test.cjs` | Original core acceptance specimens and automatic/manual state |
@@ -98,13 +97,44 @@ remaining regression requirements; historical test counts do not establish the
 current output contract. Exact execution counts and deployed-browser results
 are recorded with the restoring PR.
 
-### Restoration verification (2026-10-19)
+## Current admission/diagnosis restoration verification (2026-10-19)
 
-The final application passed **169 tests**, with **0 failures, cancellations or
+The final candidate passed **181 tests**, with **0 failures, cancellations or
+skips**, using the command above. Verified `index.html` SHA-256:
+`8478678ecb01a088eb1ddede9c43ce083c961c756cf9b75f579b32ede00eb5b9`.
+
+All 169 existing cases remain and 12 admission/diagnosis restoration cases were
+added. In the eight affected existing files, the case count remains 106; 47
+cases had document-contract or applicable-region assertions adjusted (45 direct
+case changes and two affected by the shared conflict helper). No cases were
+deleted or skipped. All PR #4 discharge-side assertions remain; DR-02 only
+changes the admission-side expectation for detailed later glucose care.
+
+A complete, explicitly normal admission fixture matches the original
+`81a73dcf` full text, ignoring only whitespace. Two reviewers read six complete
+admission/discharge/diagnosis examples. All six discharge outputs are identical
+to PR #4 for the same inputs and controls, and both note-review panels are empty.
+
+Targeted checks also caught and repaired concrete regressions during restoration:
+delivery alternatives and negative painless labor, HC detail when raw PE is also
+present, manual/source timing conflicts, pending BR admission, and same-side
+raw/manual diagnosis duplicates. The diagnosis conflict can be understood when
+copied alone, using a short qualifier in the original diagnosis list.
+
+Source comparison confirms the shared parsers and narrative helpers,
+consultation generator, PR #4 discharge context/generator, parse-status UI,
+campus controls, Copy and Reset are unchanged. Core parser/state tests and the
+test harness are unchanged. Current live deployment and actual-clipboard checks
+are recorded in the restoring PR after deployment; historical results below do
+not substitute for that acceptance.
+
+## Historical PR #4 discharge restoration verification (2026-10-19)
+
+The PR #4 application passed **169 tests**, with **0 failures, cancellations or
 skips**, using the command above. The verified `index.html` SHA-256 is
 `bcd2a7132785639685a84c1c130c9aadb5adda4a3d93ef3039b12f5363a77bbc`.
 
-The suite retains all 159 previous cases and adds 10 restoration cases. Of the
+That suite retained all 159 previous cases and added 10 restoration cases. Of the
 existing cases, 32 had discharge contract or document-region assertions updated
 to the user's requested original behavior; no cases were deleted or skipped.
 The core parser, state, DDH/PE follow-up tests and test harness are unchanged.
@@ -115,14 +145,16 @@ HC, original short counseling, actual timed BR measurements and disposition,
 and declined/pending care with conditional discharge. The normal birth-only
 discharge also matched the original `81a73dcf` output **byte for byte**, including
 paragraph whitespace, in a separate execution against the retained original.
-These current full outputs are in [narrative-examples.md](../docs/narrative-examples.md).
+The examples are maintained at [narrative-examples.md](../docs/narrative-examples.md); their current hash identifies the later admission restoration, not this historical PR #4 result.
 
 Source comparison confirmed that admission and consultation generators, shared
 parsers, diagnosis, campus controls, Copy and Reset are unchanged. The only
 admission-review wording edit removes the claim that every later/untimed record
 will also appear in discharge; its admission-time scope logic is unchanged.
-Live deployment and actual browser clipboard results are recorded with the PR
-after deployment, independently of the local test result.
+PR #4 merged as `bf4fd598`, deployed successfully, and passed **8 production
+interaction checks**, including original routine prose, detailed DDH/PE, automatic
+PROM/sepsis, both campus HC intervals, explicit pending/declined overrides, actual
+Copy and Reset. Evidence is recorded in [PR #4](https://github.com/lantus123/mmh-newborn-summary/pull/4).
 
 The local Copy tests use the real bound handler and a clipboard stub. Production
 acceptance reads the actual browser clipboard after pressing Copy. Native iOS
