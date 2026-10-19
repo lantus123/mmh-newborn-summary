@@ -68,15 +68,17 @@ test('source fidelity: clinical source sections end at PE and excluded Plan boun
 });
 
 test('source fidelity: clinical records already inside PE remain available after rendering deduplication', () => {
-  const { app, data, outputs } = specimen(`${BASE}\nPE:\nHeart murmur(+)\nRespiratory support: CPAP\nBlood glucose: 28 mg/dL`);
+  const { app, data, outputs, reviews } = specimen(`${BASE}\nPE:\nHeart murmur(+)\nRespiratory support: CPAP\nBlood glucose: 28 mg/dL`);
   const records = app.context.getClinicalSourceRecords(data);
   assert.ok(records.treatment.some(line => /CPAP/.test(line)));
   assert.ok(records.labs.some(line => /28 mg\/dL/.test(line)));
   for (const name of narrativeNames) {
-    assert.equal((outputs[name].match(/CPAP/g) || []).length, 1, `${name}: preserve source once`);
-    assert.match(outputs[name], /28 mg\/dL/);
+    const care = name === 'summary' ? reviews.summary : outputs[name];
+    assert.equal((care.match(/CPAP/g) || []).length, 1, `${name}: preserve source once in the appropriate region`);
+    assert.match(care, /28 mg\/dL/);
     assert.doesNotMatch(outputs[name], /(?:Treatment and prophylaxis administration|Laboratory results)[^.]*not documented/);
   }
+  assert.doesNotMatch(outputs.summary, /CPAP|28 mg\/dL/, 'untimed later clinical sections do not become initial PE');
   assert.doesNotMatch(outputs.consultation, /Additional treatment, investigation results, and disposition were not documented/);
 });
 
@@ -141,24 +143,27 @@ for (const verbosity of ['short', 'long']) {
 }
 
 test('source fidelity: explicitly recorded completed actions and discharge details remain unchanged', () => {
-  const { outputs } = specimen(`${BASE}\nTreatment: HBIG given at 03:00.\nLaboratory: blood glucose within normal limits, as measured.\nHospital course: fever resolved after antibiotics.\nEducation: caregivers counseled about follow-up.\nDischarge: stable; OPD follow-up on 2026-10-26.`);
+  const { outputs, reviews } = specimen(`${BASE}\nTreatment: HBIG given at 03:00.\nLaboratory: blood glucose within normal limits, as measured.\nHospital course: fever resolved after antibiotics.\nEducation: caregivers counseled about follow-up.\nDischarge: stable; OPD follow-up on 2026-10-26.`);
   for (const name of narrativeNames) {
     // Tense agreement and capitalization may change; dose/time, action state,
     // measured result and explicitly supplied temporal relation may not.
     for (const fact of [/HBIG (?:was )?(?:given|administered) at 03:00/i, /blood glucose (?:was )?within normal limits, as measured/i, /fever resolved after antibiotics/i, /caregivers (?:were )?counseled about follow-up/i, /OPD follow-up (?:on|was planned for) 2026-10-26/i]) {
-      assert.match(outputs[name], fact, `${name}: ${fact}`);
+      assert.match(name === 'summary' ? reviews.summary : outputs[name], fact, `${name}: ${fact}`);
     }
   }
+  assert.doesNotMatch(outputs.summary, /HBIG|blood glucose|fever resolved|counseled|OPD follow-up/i);
 });
 
 test('source fidelity: unknown information stays unresolved and source markup cannot become HTML', () => {
   const empty = specimen('');
   assert.doesNotMatch(empty.outputs.diagnosis, /# Term infant|, AGA|Infant of diabetic mother/);
   for (const name of narrativeNames) assert.doesNotMatch(empty.outputs[name], /GBS\(-\)|GDM\(-\)|PROM\(-\)|MAS\(-\)|Serology: not tested|Prenatal (?:antibiotics|steroid use): nil/);
-  const { html, outputs } = specimen(`${BASE}\nTreatment: CPAP <mark data-source="literal">source notation</mark>`);
+  const { app, data, html, outputs, reviews } = specimen(`${BASE}\nTreatment: CPAP <mark data-source="literal">source notation</mark>`);
   for (const name of narrativeNames) {
-    assert.match(html[name], /&lt;mark\b/);
-    assert.doesNotMatch(html[name], /<mark\s+data-source/);
-    assert.match(outputs[name], /CPAP/);
+    const regionHtml = name === 'summary' ? app.context.generateNarrativeReview(data, [], name) : html[name];
+    assert.match(regionHtml, /&lt;mark\b/);
+    assert.doesNotMatch(regionHtml, /<mark\s+data-source/);
+    assert.match(name === 'summary' ? reviews.summary : outputs[name], /CPAP/);
   }
+  assert.doesNotMatch(outputs.summary, /CPAP|source notation/);
 });

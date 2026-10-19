@@ -11,8 +11,9 @@ function render(source, manualPE = []) {
   const app = loadApp();
   const data = app.parse(source);
   const outputs = Object.fromEntries(Object.entries(app.render(data, manualPE)).map(([key, html]) => [key, toText(html)]));
+  const reviews = Object.fromEntries(['summary','discharge'].map(name=>[name,toText(app.context.generateNarrativeReview(data,manualPE,name))]));
   assert.equal(app.errors.length, 0);
-  return { app, data, outputs };
+  return { app, data, outputs, reviews };
 }
 
 test('narrative qualifiers: PE alternatives and uncertain or contradictory prefixes are preserved together', () => {
@@ -26,11 +27,15 @@ test('narrative qualifiers: PE alternatives and uncertain or contradictory prefi
 });
 
 test('narrative qualifiers: different observation times are not a source conflict, while undated opposites remain unresolved', () => {
-  const timed = render(`${BASE}\nPE: Heart murmur(-) at birth, Heart murmur(+) on day 2`).outputs;
+  const timedResult = render(`${BASE}\nPE: Heart murmur(-) at birth, Heart murmur(+) on day 2`);
+  const timed = timedResult.outputs;
   const undated = render(`${BASE}\nPE: Heart murmur(+), Heart murmur(-)`).outputs;
   for (const name of ['summary', 'discharge']) {
     assert.match(timed[name], /heart murmur was absent at birth/i);
-    assert.match(timed[name], /heart murmur was present on day 2/i);
+    if(name === 'summary'){
+      assert.doesNotMatch(timed[name], /present on day 2|murmur\(\+\)/i);
+      assert.match(timedResult.reviews.summary, /Heart murmur\(\+\) on day 2/i);
+    }else assert.match(timed[name], /heart murmur was present on day 2/i);
     assert.doesNotMatch(timed[name], /conflict/i);
     assert.match(undated[name], /conflicting/i);
     assert.match(undated[name], /Heart murmur\(\+\), Heart murmur\(-\)/);
@@ -45,29 +50,33 @@ test('narrative qualifiers: settings or feeding descriptions do not establish ad
     'Feeding: formula declined',
     'Feeding: breastfeeding not established',
   ]) {
-    const { outputs } = render(`${BASE}\n${line}`);
+    const { outputs, reviews } = render(`${BASE}\n${line}`);
     for (const name of ['summary', 'discharge']) {
-      assert.ok(outputs[name].includes(line), `${name}: keep the qualifier with its subject`);
+      assert.ok((name === 'summary' ? reviews.summary : outputs[name]).includes(line), `${name}: keep the qualifier with its subject in the appropriate region`);
       assert.doesNotMatch(outputs[name], /support consisted of|feeding consisted of/i, `${name}: no actual administration implied`);
     }
+    assert.doesNotMatch(outputs.summary, /CPAP|formula|breastfeeding/i);
   }
 });
 
 test('narrative qualifiers: a cancelled appointment stays cancelled rather than becoming a future follow-up plan', () => {
-  const { outputs } = render(`${BASE}\nOPD follow-up on 2026-10-26 was cancelled`);
+  const { outputs, reviews } = render(`${BASE}\nOPD follow-up on 2026-10-26 was cancelled`);
   for (const name of ['summary', 'discharge']) {
-    assert.match(outputs[name], /OPD follow-up on 2026-10-26 was cancelled/);
+    assert.match(name === 'summary' ? reviews.summary : outputs[name], /OPD follow-up on 2026-10-26 was cancelled/);
     assert.doesNotMatch(outputs[name], /follow-up was (?:planned|scheduled|arranged)/i);
   }
+  assert.doesNotMatch(outputs.summary, /2026-10-26|follow-up/i);
 });
 
 test('narrative qualifiers: days of life and days of antibiotic treatment are not numerically reordered together', () => {
-  const { outputs } = render(`${BASE}\nHospital course: antibiotics started on day 5 of life.\nHospital course: fever resolved on day 2 of antibiotic treatment.`);
+  const { outputs, reviews } = render(`${BASE}\nHospital course: antibiotics started on day 5 of life.\nHospital course: fever resolved on day 2 of antibiotic treatment.`);
   for (const name of ['summary', 'discharge']) {
-    assert.match(outputs[name], /antibiotics were started on day 5 of life/i);
-    assert.match(outputs[name], /fever resolved on day 2 of antibiotic treatment/i);
-    assert.ok(outputs[name].indexOf('day 5 of life') < outputs[name].indexOf('day 2 of antibiotic treatment'), `${name}: preserve distinct time anchors and the supplied sequence`);
+    const care = name === 'summary' ? reviews.summary : outputs[name];
+    assert.match(care, /antibiotics (?:were )?started on day 5 of life/i);
+    assert.match(care, /fever resolved on day 2 of antibiotic treatment/i);
+    assert.ok(care.indexOf('day 5 of life') < care.indexOf('day 2 of antibiotic treatment'), `${name}: preserve distinct time anchors and the supplied sequence`);
   }
+  assert.doesNotMatch(outputs.summary, /antibiotics|fever resolved/i);
 });
 
 test('narrative qualifiers: alternative and explicitly negative delivery assistance stays consistent in all three narratives', () => {

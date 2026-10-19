@@ -152,7 +152,8 @@ test('DN-02: birth-only prose stays factual and moves missing course/discharge p
     assert.doesNotMatch(body, INVENTED_OUTCOME, `${name}: no unsupported course or closure`);
     assert.doesNotMatch(body, GENERATED_PLANS);
   }
-  assert.match(reviews.discharge, /住院|病程|hospital course/i);
+  assert.match(reviews.discharge, /BR 照護|離室前觀察/i);
+  assert.doesNotMatch(reviews.discharge, /完整住院經過|治療反應/i);
   assert.match(reviews.discharge, /出院|discharg/i);
 });
 
@@ -164,10 +165,14 @@ test('DN-03: documented negatives, pending/declined care and source plans remain
   });
   for (const name of Object.keys(REVIEW_IDS)) {
     const body = bodies[name];
+    const care = name === 'summary' ? reviews[name] : body;
     assert.match(body, /grunting\s*(?:\(-\)|was absent|was not present)/i);
-    assert.match(body, /HBIG\s+(?:was\s+)?not yet administered/i);
-    assert.match(body, /parents declined HBV vaccine/i);
-    assert.match(body, /CPAP\s+(?:was\s+)?planned,?\s*not started/i);
+    // Untimed care belongs to discharge; admission keeps its complete source
+    // outside the copied initial note, with the same state/negation checks.
+    assert.match(care, /HBIG\s+(?:was\s+)?not yet administered/i);
+    assert.match(care, /parents declined HBV vaccine/i);
+    assert.match(care, /CPAP\s+(?:was\s+)?planned,?\s*not started/i);
+    if(name === 'summary') assert.doesNotMatch(body, /HBIG|HBV vaccine|CPAP/i);
     assert.doesNotMatch(body, GENERATED_PLANS, `${name}: control selections are outside copied prose`);
     assert.match(reviews[name], /Sepsis evaluation plan selected/i);
     assert.match(reviews[name], /Selected transfer plan:\s*NBC/i);
@@ -205,15 +210,17 @@ test('DN-05: documented CPAP initiation is retained without inventing a treatmen
 });
 
 test('DN-06: richer source PE and embedded treatment/lab facts survive paragraph reorganization exactly once', () => {
-  const { html, bodies } = specimen(sources.embedded, ['Heart murmur']);
+  const { html, bodies, reviews } = specimen(sources.embedded, ['Heart murmur']);
   for (const name of Object.keys(REVIEW_IDS)) {
     const body = bodies[name];
     exactlyOnce(body, /heart murmur/gi, `${name}: manual selection does not repeat the richer source finding`);
     exactlyOnce(body, /grade 2\/6/gi, `${name}: retain murmur grade once`);
     exactlyOnce(body, /left sternal border/gi, `${name}: retain murmur location once`);
-    exactlyOnce(body, /CPAP/g, `${name}: retain respiratory support once`);
-    exactlyOnce(body, /28 mg\/dL/g, `${name}: retain blood glucose once`);
-    assert.match(body, /blood glucose[^.\n]{0,30}28 mg\/dL/i);
+    const care = name === 'summary' ? reviews[name] : body;
+    exactlyOnce(care, /CPAP/g, `${name}: retain respiratory support once in its document region`);
+    exactlyOnce(care, /28 mg\/dL/g, `${name}: retain blood glucose once in its document region`);
+    assert.match(care, /blood glucose[^.\n]{0,30}28 mg\/dL/i);
+    if(name === 'summary') assert.doesNotMatch(body, /CPAP|28 mg\/dL/);
     const exam = paragraphs(html[name]).find(paragraph => /heart murmur/i.test(paragraph));
     assert.ok(exam, `${name}: an examination paragraph exists`);
     assert.doesNotMatch(exam, /CPAP|28 mg\/dL/, `${name}: treatment and lab values are not cast as physical signs`);

@@ -1,16 +1,16 @@
-# 敘事驗收範例（合成資料）
+# BR 入院與出院摘要：完整合成驗收範例
 
-這份檔案保留七種驗收情境的完整輸入與程式實際產出的出院正文，供審查資料忠實度、文字流暢性和臨床順序。所有資料均為合成測試資料。
+本版依一般嬰兒室的兩種文件用途，分開產生入院與出院摘要。以下每例保留相同來源的兩份完整正文與各自待確認內容，供核對資料、時間及文字流暢性；全部為合成資料。
 
-`tests/narrative-quality.test.cjs` 驗證這些情境的關鍵事實、段落、時間、處置狀態與複製範圍；`tests/narrative-qualifiers.test.cjs` 覆蓋獨立文字審查找到的限定語與時間尺度反例。通過列出的案例不代表任意自由文字皆能解析。
+入院摘要描述出生、母體產時、初次入室資料與初始 PE；後續或未明示為入室時的臨床紀錄保留在入摘待確認區。出院摘要保留相關背景、實際提供的 BR 照護、離室狀況與出院安排。沒有來源時，不推定正常過程或已完成出院。
 
-一般未提供欄位不會塞入病程正文；未確認的 UI 計畫及衛教準備顯示於正文旁的待確認區。實際來源衝突、不確定結果與明示未執行的處置仍保留在可複製正文。
+待確認區在 Copy 範圍之外；真正的 PE 來源／手動衝突仍留在可複製正文。只有出生資料時，可用事實重疊是合理的，不能為了讓兩份文字不同而虛構經過。
 
-程式只依已提供的事實組織句子。未記載療效、穩定出院或追蹤時，不補寫結局。對無法確定語意的簡寫保留完整引文；同一時間尺度的單一 day-N 事件才按日期整理，不同起算點保留原文順序。
+`index.html` SHA-256：`1989cf2b19307fa41be43cfffc54e29489729d04f0df5a1f5e3178589c705980`
 
-`index.html` SHA-256：`b5a619578069ae3deff89697957072e9cc40568365f2c17195e9330ab64492e1`
+## BR-01：一般 BR 照護與已記錄的返家安排
 
-## DN-01：完整病程與明示的治療反應、出院安排
+入摘保留初次入室資訊；48/60/72 小時的照護與返家安排只在出摘正文。數值及正常狀態均由合成來源明示。
 
 ### 合成輸入
 
@@ -20,41 +20,110 @@ GA 39+0 weeks, BW 3200 gm, AGA
 NSD
 29 y/o mother, G1 P1 A0
 Apgar score: 9 -> 10
-Maternal blood group: type O, Rh+
 GBS(-)
 GDM(-)
-Pre-eclampsia(-)
-HBsAg(-), HBeAg(-), HIV(-), RPR(-)
-PE: Jaundice(+) at 48 hours of age
 PROM(-)
-MAS(-)
-Resuscitation: Manual positive pressure ventilation(-), Intubation(-)
-Total bilirubin: 18.2 mg/dL at 48 hours of age
-Treatment: phototherapy started at 50 hours and stopped at 74 hours
-Hospital course: total bilirubin decreased to 11.0 mg/dL at 74 hours. Feeding was well tolerated.
-Education: caregivers were counseled about jaundice and follow-up.
-Discharge: clinically stable at 80 hours; OPD follow-up on 2026-10-26.
+PE: Heart murmur(-), Grunting(-)
+Admitted to BR for routine newborn care.
+Nursery course: feeding was well tolerated at 48 hours of age.
+Vital signs: stable
+Transcutaneous bilirubin: 8.4 mg/dL at 60 hours of age
+Education: caregivers were counseled about feeding and jaundice.
+Discharged home in stable condition at 72 hours of age.
+OPD follow-up on 2026-10-26.
 ```
 
-手動所見：無。
+手動 PE：無。
 
-### 程式實際產出的出院正文
+### 程式實際產出的入院摘要正文
 
 This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
 
-The mother's blood type was O, Rh+. Maternal GBS screening was negative. The maternal history was negative for gestational diabetes and preeclampsia. Maternal serology was negative for HBsAg, HBeAg, HIV, and RPR. There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS).
+Maternal GBS screening was negative. The maternal history was negative for gestational diabetes. There was no premature rupture of membranes (PROM).
 
-Manual positive pressure ventilation was not provided. Intubation was not performed. Jaundice was present at 48 hours of age.
+The infant was admitted to BR for routine newborn care. Heart murmur and grunting were absent.
 
-Total bilirubin was 18.2 mg/dL at 48 hours of age. Phototherapy was started at 50 hours and stopped at 74 hours. Total bilirubin decreased to 11.0 mg/dL at 74 hours. Feeding was well tolerated. Caregivers were counseled about jaundice and follow-up.
+### 入院摘要的待確認區
 
-The infant was discharged in clinically stable condition at 80 hours. OPD follow-up was planned for 2026-10-26.
+待確認事項（不包含在複製內容）
 
-### 正文外的待確認區
+後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。
+Nursery course: feeding was well tolerated at 48 hours of age.
+Vital signs: stable
+Transcutaneous bilirubin: 8.4 mg/dL at 60 hours of age
+Education: caregivers were counseled about feeding and jaundice.
+Discharged home in stable condition at 72 hours of age.
+OPD follow-up on 2026-10-26.
 
-此情境沒有尚待補充或勾選的提示。
+### 程式實際產出的出院摘要正文
 
-## DN-02：僅出生資料，沒有住院病程
+This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
+
+Maternal GBS screening was negative. The maternal history was negative for gestational diabetes. There was no premature rupture of membranes (PROM).
+
+The infant was admitted to BR for routine newborn care. Heart murmur and grunting were absent.
+
+Feeding was well tolerated at 48 hours of age. Vital signs were stable. Transcutaneous bilirubin was 8.4 mg/dL at 60 hours of age. Caregivers were counseled about feeding and jaundice.
+
+The infant was discharged home in stable condition at 72 hours of age. OPD follow-up was planned for 2026-10-26.
+
+### 出院摘要的待確認區
+
+此情境沒有待確認提示。
+
+## BR-02：DDH、子宮內壓迫及 PE 原文完整保留
+
+兩份正文均保留 DDH、子宮內壓迫及真正的 PE 來源衝突；未把計畫出院寫成已出院。
+
+### 合成輸入
+
+```text
+Male newborn
+GA 39+0 weeks, BW 3200 gm, AGA
+NSD
+29 y/o mother, G1 P1 A0
+Apgar score: 9 -> 10
+DDH risk factors: Family Hx (+), Oligohydramnios (+)
+子宮內壓迫徵象: 斜頸 (+)
+PE: Heart murmur(-)
+Admitted to BR for routine newborn care.
+Nursery course: feeding was well tolerated.
+Discharge: planned after reassessment.
+```
+
+手動 PE：Heart murmur。
+
+### 程式實際產出的入院摘要正文
+
+This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
+
+The infant was admitted to BR for routine newborn care. Documented DDH risk factors included family history of DDH and oligohydramnios. Documented intrauterine compression signs included torticollis. The physical examination record stated “Heart murmur(-)”. PE source conflict: Heart murmur. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection.
+
+### 入院摘要的待確認區
+
+待確認事項（不包含在複製內容）
+
+後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。
+Nursery course: feeding was well tolerated.
+Discharge: planned after reassessment.
+
+### 程式實際產出的出院摘要正文
+
+This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
+
+The infant was admitted to BR for routine newborn care. Documented DDH risk factors included family history of DDH and oligohydramnios. Documented intrauterine compression signs included torticollis. The physical examination record stated “Heart murmur(-)”. PE source conflict: Heart murmur. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection.
+
+Feeding was well tolerated.
+
+Discharge was planned after reassessment.
+
+### 出院摘要的待確認區
+
+此情境沒有待確認提示。
+
+## BR-03：只有出生資訊，沒有可用的 BR 經過
+
+可用事實只有出生資訊，因此兩份短文可重疊。出摘待確認區提示需要 BR 照護與出院資料，不補寫餵食良好、正常檢驗或穩定返家。
 
 ### 合成輸入
 
@@ -64,17 +133,29 @@ GA 39+0 weeks, BW 3200 gm, AGA
 NSD
 ```
 
-手動所見：無。
+手動 PE：無。
 
-### 程式實際產出的出院正文
+### 程式實際產出的入院摘要正文
 
 This male newborn was born at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age.
 
-### 正文外的待確認區
+### 入院摘要的待確認區
 
-待確認事項（不包含在複製內容）尚未提供完整住院經過；請依實際紀錄補充病程與治療反應。 尚未提供出院狀態與後續安排；請在完成出院摘要前補入。
+此情境沒有待確認提示。
 
-## DN-03：明確陰性、尚未執行、拒絕與手動計畫
+### 程式實際產出的出院摘要正文
+
+This male newborn was born at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age.
+
+### 出院摘要的待確認區
+
+待確認事項（不包含在複製內容）
+
+尚未提供 BR 照護或離室前觀察；有紀錄時請補入。 尚未提供 BR 離室狀態與出院安排；請補入實際紀錄。
+
+## BR-04：明示入室當下的檢查與處置
+
+明寫 at admission 的檢驗與處置進入摘；4 小時後的檢驗及後續出院計畫留在出摘。未自行添加低血糖病因或療效判斷。
 
 ### 合成輸入
 
@@ -84,29 +165,49 @@ GA 39+0 weeks, BW 3200 gm, AGA
 NSD
 29 y/o mother, G1 P1 A0
 Apgar score: 9 -> 10
-PE: Respiratory distress(+), Grunting(-)
-Treatment: HBIG not yet administered; parents declined HBV vaccine.
-Respiratory support: CPAP planned, not started.
+PE: Jitteriness(+) at BR admission
+Admitted to BR for newborn observation.
+Laboratory at admission: blood glucose 38 mg/dL
+Treatment at admission: glucose gel was administered in BR.
+Nursery course: blood glucose was 61 mg/dL at 4 hours of age.
+Discharge: planned after further observation.
 ```
 
-手動所見：Respiratory distress。
+手動 PE：無。
 
-此情境另選取 sepsis 評估與因呼吸症狀轉入 NBC 的計畫；下方正文不將勾選當作已完成處置。
-
-### 程式實際產出的出院正文
+### 程式實際產出的入院摘要正文
 
 This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
 
-Respiratory distress was present. Grunting was absent.
+The infant was admitted to BR for newborn observation. Jitteriness was present at BR admission.
 
-HBIG was not yet administered. Parents declined HBV vaccine. CPAP was planned, not started.
+At admission, blood glucose was 38 mg/dL. At admission, glucose gel was administered in BR.
 
-### 正文外的待確認區
+### 入院摘要的待確認區
 
-待確認事項（不包含在複製內容）尚未提供出院狀態與後續安排；請在完成出院摘要前補入。已選取的評估／處置計畫
-Sepsis evaluation plan selected: CBC/DC, CRP, and blood culture. Completion and results require confirmation from the clinical record. Selected transfer plan: NBC for respiratory symptoms. Transfer completion and the subsequent course must follow the supplied record.
+待確認事項（不包含在複製內容）
 
-## DN-04：未明資料與相互衝突的來源
+後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。
+Nursery course: blood glucose was 61 mg/dL at 4 hours of age.
+Discharge: planned after further observation.
+
+### 程式實際產出的出院摘要正文
+
+This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
+
+The infant was admitted to BR for newborn observation. Jitteriness was present at BR admission.
+
+At admission, blood glucose was 38 mg/dL. At admission, glucose gel was administered in BR. Blood glucose was 61 mg/dL at 4 hours of age.
+
+Discharge was planned after further observation.
+
+### 出院摘要的待確認區
+
+此情境沒有待確認提示。
+
+## BR-05：出生與第 2 天的 PE 各有時間
+
+入摘只保留明示出生時的陰性，第 2 天陽性在待確認區可追溯；出摘保留兩個不同時點，不把它們當作同時矛盾。
 
 ### 合成輸入
 
@@ -116,111 +217,97 @@ GA 39+0 weeks, BW 3200 gm, AGA
 NSD
 29 y/o mother, G1 P1 A0
 Apgar score: 9 -> 10
-GDM status unknown
-GBS(+)
-GBS(-)
+PE: Heart murmur(-) at birth, Heart murmur(+) on day 2
+Admitted to BR for routine newborn care.
+Nursery course: feeding was well tolerated on day 2.
+Discharge: planned after clinical reassessment.
+```
+
+手動 PE：無。
+
+### 程式實際產出的入院摘要正文
+
+This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
+
+The infant was admitted to BR for routine newborn care. Heart murmur was absent at birth.
+
+### 入院摘要的待確認區
+
+待確認事項（不包含在複製內容）
+
+此列含後續、跨時點或未能確認為入院時的評估，原文保留供核對，未納入入院正文。
+Heart murmur(+) on day 2
+
+後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。
+Nursery course: feeding was well tolerated on day 2.
+Discharge: planned after clinical reassessment.
+
+### 程式實際產出的出院摘要正文
+
+This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
+
+The infant was admitted to BR for routine newborn care. Heart murmur was absent at birth. Heart murmur was present on day 2.
+
+Feeding was well tolerated on day 2.
+
+Discharge was planned after clinical reassessment.
+
+### 出院摘要的待確認區
+
+此情境沒有待確認提示。
+
+## BR-06：來源中的條件、計畫與尚未完成狀態
+
+已記錄的餵食事實留出摘，衛教未來式與有條件的出院計畫保持原意；沒有擅自完成衛教或出院。
+
+### 合成輸入
+
+```text
+Male newborn
+GA 39+0 weeks, BW 3200 gm, AGA
+NSD
+29 y/o mother, G1 P1 A0
+Apgar score: 9 -> 10
 PE: Heart murmur(-)
+Admitted to BR for routine newborn care.
+Nursery course: feeding was well tolerated.
+Education: caregivers will be counseled before discharge.
+Discharge: planned if the repeat bilirubin result is acceptable; not yet discharged.
 ```
 
-手動所見：Heart murmur。
+手動 PE：無。
 
-### 程式實際產出的出院正文
+### 程式實際產出的入院摘要正文
 
 This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
 
-Maternal GBS status entries were conflicting (“GBS(+)”; “GBS(-)”). Maternal gestational diabetes status was recorded as unknown.
+The infant was admitted to BR for routine newborn care. Heart murmur was absent.
 
-The physical examination record stated “Heart murmur(-)”. PE source conflict: Heart murmur. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection.
+### 入院摘要的待確認區
 
-### 正文外的待確認區
+待確認事項（不包含在複製內容）
 
-待確認事項（不包含在複製內容）尚未提供完整住院經過；請依實際紀錄補充病程與治療反應。 尚未提供出院狀態與後續安排；請在完成出院摘要前補入。
+後續或未明示入院時點的臨床紀錄，保留於出院摘要及本區核對，未納入入院正文。
+Nursery course: feeding was well tolerated.
+Education: caregivers will be counseled before discharge.
+Discharge: planned if the repeat bilirubin result is acceptable; not yet discharged.
 
-## DN-05：治療確已開始，但沒有反應或出院資料
-
-### 合成輸入
-
-```text
-Male newborn
-GA 39+0 weeks, BW 3200 gm, AGA
-NSD
-29 y/o mother, G1 P1 A0
-Apgar score: 9 -> 10
-PE: Respiratory distress(+)
-Respiratory support: CPAP started at 2 hours of age.
-```
-
-手動所見：Respiratory distress。
-
-### 程式實際產出的出院正文
+### 程式實際產出的出院摘要正文
 
 This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
 
-Respiratory distress was present.
+The infant was admitted to BR for routine newborn care. Heart murmur was absent.
 
-CPAP was started at 2 hours of age.
+Feeding was well tolerated. Caregivers will be counseled before discharge.
 
-### 正文外的待確認區
+The disposition record stated “Discharge: planned if the repeat bilirubin result is acceptable; not yet discharged”.
 
-待確認事項（不包含在複製內容）尚未提供出院狀態與後續安排；請在完成出院摘要前補入。
+### 出院摘要的待確認區
 
-## DN-06：PE 內夾有檢驗／治療，且有同向手動 finding
+此情境沒有待確認提示。
 
-### 合成輸入
+## 驗收用途
 
-```text
-Male newborn
-GA 39+0 weeks, BW 3200 gm, AGA
-NSD
-29 y/o mother, G1 P1 A0
-Apgar score: 9 -> 10
-PE:
-Heart murmur(+), grade 2/6, left sternal border
-Respiratory support: CPAP
-Blood glucose: 28 mg/dL
-```
+`tests/br-document-scope.test.cjs` 核對一般 BR 文件的用途、時間界線、DDH／PE、Copy 與 Reset。其他敘事與保真測試保留來源數值、狀態、條件與時間的回歸約束；其中較長療程僅用來檢查轉寫忠實度，不作為一般 BR 範例。
 
-手動所見：Heart murmur。
-
-### 程式實際產出的出院正文
-
-This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
-
-A heart murmur was present (grade 2/6, left sternal border).
-
-Respiratory support consisted of CPAP. Blood glucose was 28 mg/dL.
-
-### 正文外的待確認區
-
-待確認事項（不包含在複製內容）尚未提供出院狀態與後續安排；請在完成出院摘要前補入。
-
-## DN-07：來源段落亂序、同時存在的事實不等於因果
-
-### 合成輸入
-
-```text
-Male newborn
-GA 39+0 weeks, BW 3200 gm, AGA
-NSD
-29 y/o mother, G1 P1 A0
-Apgar score: 9 -> 10
-Discharge: clinically stable on day 4; OPD follow-up on 2026-10-26.
-Laboratory: blood culture positive for E. coli on day 2.
-Treatment: ampicillin started on day 1.
-Hospital course: feeding was well tolerated on day 3.
-```
-
-手動所見：無。
-
-### 程式實際產出的出院正文
-
-This male newborn was born to a 29-year-old G1P1A0 mother at 39+0 weeks of gestation by vaginal delivery. The birth weight was 3200 gm, and the infant was appropriate for gestational age. APGAR scores were 9 and 10 at 1 and 5 minutes, respectively.
-
-Ampicillin was started on day 1. Blood culture was positive for E. coli on day 2. Feeding was well tolerated on day 3.
-
-The infant was discharged in clinically stable condition on day 4. OPD follow-up was planned for 2026-10-26.
-
-### 正文外的待確認區
-
-此情境沒有尚待補充或勾選的提示。
-
+這些固定案例不代表可正確理解任意自由文字。無法安全拆開時間、條件或否定的來源會保留供核對。
