@@ -9,9 +9,10 @@ const BASE = 'Male newborn\nGA 39+0 weeks, BW 3200 gm, AGA\nNSD\nApgar score: 9 
 const narrativeNames = ['summary', 'consultation', 'discharge'];
 const perinatalNarrativeNames = ['summary', 'consultation'];
 
-// The user restored the original BR discharge template. Birth/maternal history
-// belongs in admission/consultation, while explicit BR facts still override the
-// discharge defaults. This changes document purpose, not parser fidelity.
+// The user restored both original BR templates. Admission retains its brief
+// birth/maternal/finding structure and selected-care ending; detailed care stays
+// in consultation/discharge. Explicit source exceptions still override matching
+// defaults. No review checklist is needed to use either restored template.
 
 function specimen(source, manualPE = [], configure, campus = 'tpc') {
   const app = loadApp(campus);
@@ -69,10 +70,13 @@ test('source fidelity: GDM management keeps multiple treatments and the source i
 });
 
 test('source fidelity: clinical source sections end at PE and excluded Plan boundaries', () => {
-  const { outputs } = specimen(`${BASE}\nPrenatal antibiotics:\nampicillin 2 g IV before delivery\nPE: left preauricular pit\nPlan: EXCLUDED_PLAN_SOURCE`);
+  const { app, data, outputs } = specimen(`${BASE}\nPrenatal antibiotics:\nampicillin 2 g IV before delivery\nPE: left preauricular pit\nPlan: EXCLUDED_PLAN_SOURCE`);
+  const records = app.context.getClinicalSourceRecords(data);
+  assert.ok(records.prenatalAntibiotics.some(line => /ampicillin 2 g IV before delivery/.test(line)));
+  assert.doesNotMatch(records.prenatalAntibiotics.join(' '), /left preauricular pit|EXCLUDED_PLAN_SOURCE/);
   for (const name of narrativeNames) {
     if (name === 'discharge') assert.doesNotMatch(outputs[name], /ampicillin 2 g IV before delivery/);
-    else assert.match(outputs[name], /ampicillin 2 g IV before delivery/);
+    else if (name === 'consultation') assert.match(outputs[name], /ampicillin 2 g IV before delivery/);
     assert.match(outputs[name], /left preauricular pit/);
     assert.doesNotMatch(outputs[name], /EXCLUDED_PLAN_SOURCE/);
   }
@@ -83,13 +87,15 @@ test('source fidelity: clinical records already inside PE remain available after
   const records = app.context.getClinicalSourceRecords(data);
   assert.ok(records.treatment.some(line => /CPAP/.test(line)));
   assert.ok(records.labs.some(line => /28 mg\/dL/.test(line)));
-  for (const name of narrativeNames) {
-    const care = name === 'summary' ? reviews.summary : outputs[name];
+  for (const name of ['consultation', 'discharge']) {
+    const care = outputs[name];
     assert.equal((care.match(/CPAP/g) || []).length, 1, `${name}: preserve source once in the appropriate region`);
     assert.match(care, /28 mg\/dL/);
     assert.doesNotMatch(outputs[name], /(?:Treatment and prophylaxis administration|Laboratory results)[^.]*not documented/);
   }
   assert.doesNotMatch(outputs.summary, /CPAP|28 mg\/dL/, 'untimed later clinical sections do not become initial PE');
+  assert.match(outputs.summary, /heart murmur/i, 'the brief admission retains the actual examination finding');
+  assert.equal(reviews.summary, '', 'detailed care is not duplicated in an admission review appendix');
   assert.doesNotMatch(outputs.consultation, /Additional treatment, investigation results, and disposition were not documented/);
 });
 
@@ -107,21 +113,22 @@ test('source fidelity: antibiotics on a hospital-course line are not contradicte
   assert.doesNotMatch(outputs.discharge, /Treatment and prophylaxis administration[^.]*not documented|resolved without intervention/);
 });
 
-test('discharge template contract: selected controls restore the original discharge course while admission and consultation retain plans', () => {
+test('original template contract: selected controls restore both note endings while consultation retains the selected plans', () => {
   const { outputs, reviews } = specimen(`${BASE}\nGDM(+)`, ['Respiratory distress', 'Fever', 'Undescended testis (lt)', 'Hydrocele'], app => {
     app.document.getElementById('sepsisWorkup').checked = true;
     app.document.querySelector('input[name="sepsisReason"][value="fever"]').checked = true;
     app.document.getElementById('nbcTransfer').checked = true;
     app.document.querySelector('input[name="nbcReason"][value="respiratory"]').checked = true;
   });
-  for (const name of perinatalNarrativeNames) {
-    const planText = name === 'consultation' ? outputs[name] : reviews[name];
-    assert.match(planText, /Sepsis evaluation plan selected/);
-    assert.match(planText, /Selected transfer plan: NBC/);
-    assert.match(planText, /Blood glucose monitoring plan/);
-    if (name !== 'consultation') assert.doesNotMatch(outputs[name], /Sepsis evaluation plan selected|Selected transfer plan: NBC|Blood glucose monitoring plan/);
-    assert.doesNotMatch(outputs[name], /blood culture was performed|laboratory results were within normal limits|O2 hood was provided|weaned to room air|resolved without intervention|received routine prophylaxis|Caregivers were counseled|verbalized understanding|was transferred to|was discharged in stable condition/);
-  }
+  assert.match(outputs.consultation, /Sepsis evaluation plan selected/);
+  assert.match(outputs.consultation, /Selected transfer plan: NBC/);
+  assert.match(outputs.consultation, /Blood glucose monitoring plan/);
+  assert.doesNotMatch(outputs.consultation, /blood culture was performed|laboratory results were within normal limits|O2 hood was provided|weaned to room air|resolved without intervention|received routine prophylaxis|Caregivers were counseled|verbalized understanding|was transferred to|was discharged in stable condition/);
+  assert.match(outputs.summary, /sepsis workup including CBC\/DC, CRP, and blood culture was performed/i);
+  assert.match(outputs.summary, /blood glucose monitoring for 24 hours/i);
+  assert.match(outputs.summary, /transferred to NBC for further evaluation and care/i);
+  assert.doesNotMatch(outputs.summary, /Sepsis evaluation plan selected|Selected transfer plan: NBC|Blood glucose monitoring plan|laboratory results were within normal limits|received routine prophylaxis|Caregivers were counseled|was discharged in stable condition/i);
+  assert.equal(reviews.summary, '');
   assert.match(outputs.discharge, /sepsis workup including CBC\/DC, CRP, and blood culture was performed/i);
   assert.match(outputs.discharge, /laboratory results were within normal limits/i);
   assert.match(outputs.discharge, /Blood glucose levels were monitored per protocol and remained within normal limits/i);
@@ -141,8 +148,10 @@ for (const [campus, interval] of [['tpc', /every 2 hours \(Q2H\)/], ['ttmh', /ev
       app.document.getElementById('peCaput').checked = true;
       app.document.getElementById('caputHcInput').checked = true;
     }, campus);
-    assert.match(reviews.summary, /Selected head circumference monitoring plan/);
-    assert.match(reviews.summary, interval);
+    assert.equal(reviews.summary, '');
+    assert.match(outputs.summary, /caput succedaneum/i);
+    assert.doesNotMatch(outputs.summary, /head circumference was monitored|No significant interval increase was observed/i,
+      'the original brief admission does not copy the discharge monitoring outcome');
     assert.doesNotMatch(outputs.discharge, /Selected head circumference monitoring plan|check HC/);
     assert.match(outputs.discharge, /head circumference was monitored/i);
     assert.match(outputs.discharge, interval);
@@ -172,14 +181,15 @@ for (const verbosity of ['short', 'long']) {
 
 test('source fidelity: explicitly recorded completed actions and discharge details remain unchanged', () => {
   const { outputs, reviews } = specimen(`${BASE}\nTreatment: HBIG given at 03:00.\nLaboratory: blood glucose within normal limits, as measured.\nHospital course: fever resolved after antibiotics.\nEducation: caregivers counseled about follow-up.\nDischarge: stable; OPD follow-up on 2026-10-26.`);
-  for (const name of narrativeNames) {
+  for (const name of ['consultation', 'discharge']) {
     // Tense agreement and capitalization may change; dose/time, action state,
     // measured result and explicitly supplied temporal relation may not.
     for (const fact of [/HBIG (?:was )?(?:given|administered) at 03:00/i, /blood glucose (?:was )?within normal limits, as measured/i, /fever resolved after antibiotics/i, /caregivers (?:were )?counseled about follow-up/i, /OPD follow-up (?:on|was planned for) 2026-10-26/i]) {
-      assert.match(name === 'summary' ? reviews.summary : outputs[name], fact, `${name}: ${fact}`);
+      assert.match(outputs[name], fact, `${name}: ${fact}`);
     }
   }
   assert.doesNotMatch(outputs.summary, /HBIG|blood glucose|fever resolved|counseled|OPD follow-up/i);
+  assert.equal(reviews.summary, '');
 });
 
 test('source fidelity: unknown information stays unresolved and source markup cannot become HTML', () => {
@@ -187,11 +197,12 @@ test('source fidelity: unknown information stays unresolved and source markup ca
   assert.doesNotMatch(empty.outputs.diagnosis, /# Term infant|, AGA|Infant of diabetic mother/);
   for (const name of narrativeNames) assert.doesNotMatch(empty.outputs[name], /GBS\(-\)|GDM\(-\)|PROM\(-\)|MAS\(-\)|Serology: not tested|Prenatal (?:antibiotics|steroid use): nil/);
   const { app, data, html, outputs, reviews } = specimen(`${BASE}\nTreatment: CPAP <mark data-source="literal">source notation</mark>`);
-  for (const name of narrativeNames) {
-    const regionHtml = name === 'summary' ? app.context.generateNarrativeReview(data, [], name) : html[name];
+  for (const name of ['consultation', 'discharge']) {
+    const regionHtml = html[name];
     assert.match(regionHtml, /&lt;mark\b/);
     assert.doesNotMatch(regionHtml, /<mark\s+data-source/);
-    assert.match(name === 'summary' ? reviews.summary : outputs[name], /CPAP/);
+    assert.match(outputs[name], /CPAP/);
   }
   assert.doesNotMatch(outputs.summary, /CPAP|source notation/);
+  assert.equal(reviews.summary, '');
 });

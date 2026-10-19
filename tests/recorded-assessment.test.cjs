@@ -255,8 +255,10 @@ for (const [campus, expectedInterval] of [['tpc', /every 2 hours \(Q2H\)/], ['tt
     assert.match(toText(outputs.discharge), expectedInterval, `${campus}: original selected HC monitoring sentence is restored in discharge`);
     assert.match(toText(outputs.discharge), /head circumference was monitored/i);
     assert.match(toText(outputs.discharge), /No significant interval increase was observed/i);
-    assert.match(toText(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'summary')), expectedInterval,
-      `${campus}: admission still keeps the selected monitoring plan outside its initial facts`);
+    assert.match(toText(outputs.summary), campus === 'tpc' ? /check HC Q2H then QD/i : /check HC Q8H/i,
+      `${campus}: the original selected caput detail remains available in brief admission`);
+    assert.doesNotMatch(toText(outputs.summary), /head circumference was monitored|No significant interval increase was observed/i);
+    assert.equal(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'summary'), '');
     assert.equal(app.context.generateNarrativeReview(data, app.context.getPEFindings(), 'discharge'), '');
   });
 }

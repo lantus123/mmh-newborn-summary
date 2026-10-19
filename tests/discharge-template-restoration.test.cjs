@@ -44,7 +44,7 @@ test('DR-01: ordinary birth input again produces the original complete BR discha
     'restoring the routine template removes the requirement to supply a separate BR course first');
 });
 
-test('DR-02: restoring discharge templates leaves admission factual and temporally distinct', () => {
+test('DR-02: both restored templates keep initial PE distinct from the detailed source course', () => {
   const { bodies } = specimen(`${BASE}
 Admitted to BR for routine newborn care.
 PE: Jitteriness(+) at admission.
@@ -55,8 +55,10 @@ Discharge planned tomorrow if feeding remains adequate.`);
   assert.match(bodies.summary, /39\+0 weeks/);
   assert.match(bodies.summary, /3200 gm/);
   assert.match(bodies.summary, /Jitteriness/i);
-  assert.match(bodies.summary, /38 mg\/dL/);
-  assert.match(bodies.summary, /glucose gel/i);
+  assert.doesNotMatch(bodies.summary, /38 mg\/dL|glucose gel/i,
+    'the separately requested original admission style does not append a detailed treatment course');
+  assert.match(bodies.consultation, /38 mg\/dL/);
+  assert.match(bodies.consultation, /glucose gel/i);
   assert.doesNotMatch(bodies.summary, /61 mg\/dL|discharge planned|discharged in stable condition|received routine prophylaxis/i);
   assert.match(bodies.discharge, /61 mg\/dL/);
   assert.notEqual(compact(bodies.summary), compact(bodies.discharge));
