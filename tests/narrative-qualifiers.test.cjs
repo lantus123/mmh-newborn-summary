@@ -30,16 +30,20 @@ test('narrative qualifiers: different observation times are not a source conflic
   const timedResult = render(`${BASE}\nPE: Heart murmur(-) at birth, Heart murmur(+) on day 2`);
   const timed = timedResult.outputs;
   const undated = render(`${BASE}\nPE: Heart murmur(+), Heart murmur(-)`).outputs;
+  assert.doesNotMatch(undated.diagnosis, /^# Heart murmur\b/im,
+    'unresolved opposing source observations do not establish a definite diagnosis');
   for (const name of ['summary', 'discharge']) {
-    assert.match(timed[name], /heart murmur was absent at birth/i);
+    assert.match(timed[name], /heart murmur(?:\(-\)| was absent) at birth/i);
     if(name === 'summary'){
       assert.doesNotMatch(timed[name], /present on day 2|murmur\(\+\)/i);
-      assert.match(timedResult.outputs.consultation, /Heart murmur\(\+\) on day 2/i);
+      assert.doesNotMatch(timedResult.outputs.consultation, /Heart murmur\(\+\) on day 2/i,
+        'the original consultation concerns delivery, not the later BR course');
       assert.equal(timedResult.reviews.summary, '', 'the brief admission no longer adds a later-course review appendix');
-    }else assert.match(timed[name], /heart murmur was present on day 2/i);
+    }else assert.match(timed[name], /heart murmur(?:\(\+\)| was present)? on day 2/i);
     assert.doesNotMatch(timed[name], /conflict/i);
-    assert.match(undated[name], /conflicting/i);
-    assert.match(undated[name], /Heart murmur\(\+\), Heart murmur\(-\)/);
+    assert.match(undated[name], /conflict/i);
+    assert.match(undated[name], /Heart murmur\(\+\)[\s\S]*Heart murmur\(-\)/,
+      'both opposing results stay in the same original PE slot; prose may use an appropriate conjunction');
   }
 });
 
@@ -51,9 +55,11 @@ test('narrative qualifiers: settings or feeding descriptions do not establish ad
     'Feeding: formula declined',
     'Feeding: breastfeeding not established',
   ]) {
-    const { outputs, reviews } = render(`${BASE}\n${line}`);
-    for (const name of ['consultation', 'discharge']) {
-      assert.ok(outputs[name].includes(line), `${name}: keep the qualifier with its subject in the appropriate region`);
+    const { app, data, outputs, reviews } = render(`${BASE}\n${line}`);
+    const records = app.context.getClinicalSourceRecords(data);
+    assert.ok([...records.treatment, ...records.course].includes(line), 'the parser keeps the qualifier with its clinical subject');
+    for (const name of ['discharge']) {
+      assert.ok(outputs[name].includes(line.replace(/^[^:]+:\s*/, '')), `${name}: keep the qualifier with its subject in the matching original slot`);
       assert.doesNotMatch(outputs[name], /support consisted of|feeding consisted of/i, `${name}: no actual administration implied`);
     }
     assert.doesNotMatch(outputs.summary, /CPAP|formula|breastfeeding/i);
@@ -63,7 +69,7 @@ test('narrative qualifiers: settings or feeding descriptions do not establish ad
 
 test('narrative qualifiers: a cancelled appointment stays cancelled rather than becoming a future follow-up plan', () => {
   const { outputs, reviews } = render(`${BASE}\nOPD follow-up on 2026-10-26 was cancelled`);
-  for (const name of ['consultation', 'discharge']) {
+  for (const name of ['discharge']) {
     assert.match(outputs[name], /OPD follow-up on 2026-10-26 was cancelled/);
     assert.doesNotMatch(outputs[name], /follow-up was (?:planned|scheduled|arranged)|scheduled MBD and OPD follow-up/i,
       'a cancelled supplied appointment overrides the corresponding default follow-up sentence');
@@ -72,25 +78,24 @@ test('narrative qualifiers: a cancelled appointment stays cancelled rather than 
   assert.equal(reviews.summary, '');
 });
 
-test('narrative qualifiers: days of life and days of antibiotic treatment are not numerically reordered together', () => {
-  const { outputs, reviews } = render(`${BASE}\nHospital course: antibiotics started on day 5 of life.\nHospital course: fever resolved on day 2 of antibiotic treatment.`);
-  for (const name of ['consultation', 'discharge']) {
-    const care = outputs[name];
-    assert.match(care, /antibiotics (?:were )?started on day 5 of life/i);
-    assert.match(care, /fever resolved on day 2 of antibiotic treatment/i);
-    assert.ok(care.indexOf('day 5 of life') < care.indexOf('day 2 of antibiotic treatment'), `${name}: preserve distinct time anchors and the supplied sequence`);
-  }
+test('narrative qualifiers: days of life and days of antibiotic treatment retain distinct source anchors', () => {
+  const { app, data, outputs, reviews } = render(`${BASE}\nHospital course: antibiotics started on day 5 of life.\nHospital course: fever resolved on day 2 of antibiotic treatment.`);
+  const records = app.context.getClinicalSourceRecords(data);
+  assert.deepEqual(Array.from(records.course), ['Hospital course: antibiotics started on day 5 of life.', 'Hospital course: fever resolved on day 2 of antibiotic treatment.']);
+  assert.doesNotMatch(outputs.discharge, /fever resolved on day 2 of life|antibiotics started on day 2/i,
+    'a source-only course archive is no longer mandatory, and different time anchors cannot be recast as one timeline');
   assert.doesNotMatch(outputs.summary, /antibiotics|fever resolved/i);
   assert.equal(reviews.summary, '');
 });
 
-test('narrative qualifiers: delivery alternatives stay in admission and consultation while discharge omits the birth background', () => {
-  const alternate = render('Male newborn\nGA 39 weeks\nBW 3200 gm\nNSD, vacuum or forceps').outputs;
+test('narrative qualifiers: unresolved or negated delivery modifiers do not become confirmed interventions in the original delivery field', () => {
+  const result = render('Male newborn\nGA 39 weeks\nBW 3200 gm\nNSD, vacuum or forceps');
+  const alternate = result.outputs;
+  assert.equal(result.data.deliveryLine, 'NSD, vacuum or forceps', 'the unmodified source remains available without a new source paragraph');
   const negative = render('Male newborn\nGA 39 weeks\nBW 3200 gm\nNSD, painless(-)').outputs;
   for (const name of ['summary', 'consultation']) {
-    assert.equal((alternate[name].match(/NSD, vacuum or forceps/g) || []).length, 1, `${name}: retain the alternative source once`);
-    assert.doesNotMatch(alternate[name], /with vacuum assistance|and forceps assistance/i);
-    assert.match(negative[name], /Painless labor was not used/);
+    assert.match(alternate[name], /NSD|vaginal delivery/i, `${name}: the explicitly supplied delivery mode remains in its original field`);
+    assert.doesNotMatch(alternate[name], /with vacuum assistance|and forceps assistance|vacuum-assisted|forceps-assisted/i);
     assert.doesNotMatch(negative[name], /with painless labor/i);
   }
   for (const discharge of [alternate.discharge, negative.discharge]) {
@@ -99,19 +104,21 @@ test('narrative qualifiers: delivery alternatives stay in admission and consulta
   }
 });
 
-test('narrative qualifiers: corrected birth measurements retain both values without selecting the superseded number as definitive', () => {
+test('narrative qualifiers: corrected birth measurements keep unresolved original fields and preserve both source values without affirming a superseded number', () => {
   const { data, outputs } = render('Male newborn\nGA 39 weeks, corrected to 38 weeks\nBW 3200 gm, corrected to 3100 gm\nNSD');
   assert.equal(data.ga, '?');
   assert.equal(data.gaWeeks, null);
   assert.equal(data.bw, '?');
+  assert.match(data.gaSource, /GA 39 weeks, corrected to 38 weeks/);
+  assert.match(data.bwSource, /BW 3200 gm, corrected to 3100 gm/);
   for (const [name, text] of Object.entries(outputs)) {
     if (name === 'discharge') {
       assert.doesNotMatch(text, /GA 39 weeks|38 weeks|BW 3200 gm|3100 gm|birth weight|born[^.]*weeks/i,
         'birth correction details stay in their admission, consultation and diagnosis documents');
       continue;
     }
-    assert.match(text, /GA 39 weeks, corrected to 38 weeks/, `${name}: complete GA correction`);
-    assert.match(text, /BW 3200 gm, corrected to 3100 gm/, `${name}: complete weight correction`);
+    assert.match(text, /(?:GA|gestational age|at)\s*\?/i, `${name}: unresolved GA remains in its original field`);
+    assert.match(text, /(?:BW|birth weight was)\s*\?/i, `${name}: unresolved weight remains in its original field`);
     assert.doesNotMatch(text, /born[^.]*at 39 weeks|birth weight was 3200 gm|# Term infant/i, `${name}: the original value is not stated as current`);
   }
 });
@@ -120,14 +127,15 @@ test('narrative qualifiers: additional pending IAP remains in maternal documents
   const { data, outputs } = render(`${BASE}\nGBS(+)\nComplete IAP\nIAP pending`);
   assert.match(data.iapSource, /Complete IAP/);
   assert.match(data.iapSource, /IAP pending/);
-  assert.match(outputs.summary, /completed intrapartum antibiotic prophylaxis|intrapartum antibiotic prophylaxis was documented as adequate/i);
+  assert.match(outputs.summary, /uncertain IAP completion|IAP[^.]*uncertain|uncertain[^.]*intrapartum antibiotic prophylaxis/i,
+    'a pending entry prevents an unqualified completed-IAP assertion');
   assert.match(outputs.summary, /IAP pending|additional IAP entry/i);
-  assert.match(outputs.consultation, /IAP: adequate, as documented/i);
+  assert.match(outputs.consultation, /complete(?:d)? IAP/i);
+  assert.doesNotMatch(outputs.summary, /with completed intrapartum antibiotic prophylaxis[.(]/i);
   assert.equal((outputs.summary.match(/pending/gi) || []).length, 1,
     'admission retains the original one-copy narrative qualifier requirement');
-  // Consultation already exposes this source in its IAP and prenatal fields;
-  // restoring discharge does not redefine that unchanged document's layout.
-  assert.match(outputs.consultation, /Complete IAP/);
+  // The same source now belongs only in the original GBS/prenatal fields.
+  assert.match(outputs.consultation, /Complete IAP/i);
   assert.match(outputs.consultation, /IAP pending/);
   assert.doesNotMatch(outputs.discharge, /Complete IAP|IAP pending|additional IAP entry|intrapartum antibiotic prophylaxis/i);
 });

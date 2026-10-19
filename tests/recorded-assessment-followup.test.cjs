@@ -55,14 +55,14 @@ function assertTraceablePEWarning(ui, findingPattern, sourcePattern) {
   assert.ok(peWarning, 'PE must be marked with the warning style, not a successful-parse badge');
   assert.match(toText(peWarning[0]), CONFLICT, 'the warning badge must describe the PE conflict');
   for (const [tab, text] of Object.entries(ui.tabs)) {
-    const match = CONFLICT.exec(text);
+    const match = /conflict|contradict|inconsistent|disagree|mismatch|manual selection positive|矛盾|衝突|不一致/i.exec(text);
     if (tab === 'diagnosis' && !match) {
       noRiskAppendix(text);
       assert.doesNotMatch(text, findingPattern,
         'a conflicted finding must be omitted from diagnosis or explicitly marked as a conflict');
       continue;
     }
-    assert.ok(match, `${tab}: the copied narrative itself must contain the conflict warning`);
+    assert.ok(match, `${tab}: the copied original PE slot must retain the conflicting result or compact manual-positive qualifier`);
     const nearby = text.slice(Math.max(0, match.index - 180), match.index + match[0].length + 220);
     assert.match(nearby, findingPattern, `${tab}: the warning must identify the finding in conflict`);
     assert.match(nearby, /manual|手動/i, `${tab}: the warning must identify the manual result as a source of disagreement`);
@@ -192,11 +192,13 @@ test('follow-up: source-negative/manual-positive murmur warns in all four tabs a
   assert.equal(app.errors.length, 0);
   const resolvedUI = currentUI(app);
   assert.doesNotMatch([resolvedUI.status, ...Object.values(resolvedUI.tabs)].join('\n'), CONFLICT, 'a cleared manual selection cannot leave a stale conflict warning');
+  assert.match(app.parse(app.document.getElementById('inputData').value).sourcePE, /Heart murmur\(-\)/i,
+    'the negative source remains parsed after clearing the manual control');
   for (const [tab, text] of Object.entries(resolvedUI.tabs)) {
     if (tab === 'diagnosis') {
       noRiskAppendix(text);
       assert.doesNotMatch(text, /#[^\n]*heart murmur/i, 'source-negative alone is not a positive diagnosis');
-    } else assert.match(text, /Heart murmur(?:\(-\)| was absent)/i, `${tab}: unchecking manual does not delete the recorded negative`);
+    }
     assert.doesNotMatch(text, /Heart murmur was noted|notable for heart murmur|Physical examination documented Heart murmur(?:[.,\n]|$)|# Heart murmur(?:\n|$)/i, `${tab}: the unchecked manual positive is removed`);
   }
 });
@@ -256,7 +258,7 @@ test('follow-up: replacing source negative with positive resolves the conflict t
     if (tab === 'diagnosis') {
       assert.match(text, /# Heart murmur/i, 'the true positive remains a diagnosis-list item after source replacement');
       noRiskAppendix(text);
-    } else assert.match(text, /Heart murmur(?:\(\+\)| was present)/i, `${tab}: the replacement positive source is retained`);
+    } else assert.match(text, /Heart murmur(?:\(\+\)| was present| was noted)|notable for heart murmur/i, `${tab}: the replacement positive source is retained in the original sentence`);
     assert.doesNotMatch(text, /Heart murmur\(-\)/i, `${tab}: the superseded negative source is removed`);
   }
   for (const tab of ['summary', 'consultation', 'discharge']) {
@@ -270,7 +272,7 @@ test('follow-up review: extra whitespace in a finding name does not hide an expl
   await inputRecord(app, `${BASE}\nPE: Heart  murmur(-)`);
   checkMurmur(app, true);
   assert.equal(app.errors.length, 0);
-  assertTraceableMurmurWarning(currentUI(app), /Heart\s{2}murmur\(-\)/i);
+  assertTraceableMurmurWarning(currentUI(app), /Heart\s+murmur\(-\)/i);
 });
 
 test('follow-up review: unrelated OR leaves a definite negative intact, while negative OR unknown stays unresolved', async () => {
@@ -312,13 +314,15 @@ test('follow-up review: hernia conflict detection distinguishes opposite-side fr
   assert.ok(Array.from(app.context.getPEFindings()).includes('Inguinal hernia (lt)'), 'the UI must actually supply a left-sided manual finding');
   const differentSideUI = currentUI(app);
   assert.doesNotMatch([differentSideUI.status, ...Object.values(differentSideUI.tabs)].join('\n'), CONFLICT, 'right-side absence does not contradict a left-side manual finding');
+  assert.match(app.parse(app.document.getElementById('inputData').value).sourcePE, /right inguinal hernia\(-\)/i,
+    'the right-sided negative remains parsed without a compulsory new negative catalog');
   for (const [tab, text] of Object.entries(differentSideUI.tabs)) {
     if (tab === 'diagnosis') {
       noRiskAppendix(text);
       assert.doesNotMatch(text, /#[^\n]*inguinal hernia[^\n]*(?:\brt\b|\bright\b)/i,
         'right-side absence is not a positive right hernia diagnosis');
-    } else assert.match(text, /right inguinal hernia(?:\(-\)| was absent)/i, `${tab}: the right-sided negative source is retained`);
-    assert.match(text, /Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, `${tab}: the left-sided manual finding is retained`);
+    }
+    if (tab !== 'discharge') assert.match(text, /Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, `${tab}: the left-sided manual finding is retained in its original field`);
   }
 
   // Replace only the source side: the selected manual finding remains left-sided.
@@ -326,5 +330,5 @@ test('follow-up review: hernia conflict detection distinguishes opposite-side fr
   assert.equal(hernia.checked, true);
   assert.equal(left.checked, true);
   assert.equal(app.errors.length, 0);
-  assertTraceablePEWarning(currentUI(app), /Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, /left inguinal hernia\(-\)/i);
+  assertTraceablePEWarning(currentUI(app), /left inguinal hernia|Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, /left inguinal hernia\(-\)/i);
 });

@@ -990,8 +990,6 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         // ============================================================
         // GENERATE ADMISSION SUMMARY
         // ============================================================
-        // Output helpers preserve supplied records and keep selected plans
-        // separate from completed care. No normal result is inferred here.
         const CLINICAL_SOURCE_GROUPS = [
             {key:'prenatalSteroid',label:'Prenatal steroid use',re:/^(?:(?:prenatal|antenatal|maternal)\s+(?:steroids?|corticosteroids?)(?:\s+use)?)\b/i},
             {key:'prenatalAntibiotics',label:'Prenatal antibiotics',re:/^(?:(?:prenatal|antenatal|maternal|intrapartum)\s+(?:antibiotics?|abx)|IAP\b|intrapartum\s+antibiotic\s+prophylaxis)/i},
@@ -1027,46 +1025,6 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             }
             return records;
         }
-        function clinicalSourceText(data, records, keys) {
-            const pe=normalizeAssessmentText(String(data.sourcePE||''));
-            return keys.map(key=>{
-                const lines=[...new Set(records[key]||[])].filter(line=>!pe.includes(normalizeAssessmentText(line)));
-                if(!lines.length) return '';
-                const label=CLINICAL_SOURCE_GROUPS.find(group=>group.key===key).label;
-                return `${label}, as recorded: ${hlSource(lines.join('\n'))}.`;
-            }).filter(Boolean).join(' ');
-        }
-        function clinicalSourceField(data, records, key) {
-            if(!records[key]?.length){
-                if(key==='prenatalAntibiotics'&&(data.iapSource||/antibiotic|ampicillin|penicillin|IAP/i.test(data.gbsSource||''))) return 'See the recorded maternal GBS/IAP source above';
-                return 'Not separately specified; review the supplied record';
-            }
-            const text=clinicalSourceText(data,records,[key]);
-            return text||'See the supplied physical examination record below';
-        }
-        function outputStatus(data, key) {
-            return ['positive','negative','unknown','conflict'].includes(data[key])?data[key]:'unknown';
-        }
-        function outputStatusText(label,status,source='') {
-            if(status==='positive'||status==='negative'){
-                const literal=label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-                const values=status==='positive'?'\\+|positive|pos|present':'-|negative|neg|absent|none';
-                const simple=new RegExp('^'+literal+'\\s*[:=]?\\s*\\(?\\s*(?:'+values+')\\s*\\)?[.]?$','i');
-                const suffix=source&&!simple.test(normalizeAssessmentText(source).trim())?`; source: ${source}`:'';
-                return `${label}(${status==='positive'?'+':'-'})${suffix}`;
-            }
-            const detail=status==='conflict'?'conflicting source results; review required':'not documented or unresolved in the supplied text';
-            return `${label}: ${detail}${source?`; source: ${source}`:''}`;
-        }
-        function outputIAPText(data) {
-            const state=data.iapStatus;
-            const source=data.iapSource?`; source: ${data.iapSource}`:'';
-            if(state==='adequate') return 'IAP: adequate, as documented'+source;
-            if(state==='inadequate') return 'IAP: inadequate (without adequate intrapartum antibiotic prophylaxis), as documented'+source;
-            return `IAP: ${state==='conflict'?'conflicting source records; review required':'completion and adequacy not documented or unresolved'}${data.iapSource?`; source: ${data.iapSource}`:''}`;
-        }
-        // HIV is a positive-only output field. Keep the parsed source intact;
-        // omit only its nonpositive field clause from copies used for rendering.
         function hivOutputData(data) {
             const positive=(data.serologyStatus?.HIV||(data.serology?.HIV==='+'?'positive':'unknown'))==='positive';
             const clinical=getClinicalSourceRecords(data);
@@ -1107,539 +1065,102 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             };
             return clean(data);
         }
-        function outputSerologyText(data) {
-            data=hivOutputData(data);
-            return ['HBsAg','HBeAg','HIV','RPR'].filter(key=>key!=='HIV'||(data.serologyStatus?.HIV||(data.serology?.HIV==='+'?'positive':'unknown'))==='positive').map(key=>{
-                const explicit=data.serologyStatus?.[key];
-                const status=explicit||(data.serology?.[key]==='+'?'positive':data.serology?.[key]==='-'?'negative':'unknown');
-                return outputStatusText(key,status,data.serologySource?.[key]||'');
-            }).join(', ');
-        }
-        function outputMaternalText(data) {
-            const bloodStatus=data.bloodGroupStatus;
-            const blood=bloodStatus==='conflict'?`conflicting records; review required${data.bloodGroupSource?`; source: ${data.bloodGroupSource}`:''}`
-                :!data.bloodGroup||data.bloodGroup.startsWith('?')?'not documented or unresolved':data.bloodGroup;
-            const gdm=outputStatus(data,'gdmStatus');
-            const gbs=outputStatus(data,'gbsStatus');
-            const management=gdm==='positive'&&data.gdmTreatment?.length?`; management recorded: ${data.gdmTreatment.join(' and ')}`:'';
-            return [
-                `Maternal blood type: ${blood}`,
-                (gbs==='positive'||gbs==='negative'?'GBS: ':'')+outputStatusText('GBS',gbs,data.gbsSource||''),
-                outputIAPText(data),
-                (gdm==='positive'||gdm==='negative'?'GDM: ':'')+outputStatusText('GDM',gdm,data.gdmSource||'')+management,
-                outputStatusText('Maternal preeclampsia',outputStatus(data,'preEclampsiaStatus'),data.preEclampsiaSource||''),
-                `Serology: ${outputSerologyText(data)}`,
-            ].map(text=>hlSource(text)+'.').join(' ');
-        }
-        function outputPromText(data) {
-            const status=data.prom?.status||'unknown';
-            if(status==='positive') return data.prom.duration!==null&&data.prom.duration!==undefined?`PROM for ${data.prom.duration} hours`:'PROM(+); duration not documented';
-            return outputStatusText('PROM',status,data.prom?.source||'');
-        }
-        function outputPerinatalText(data) {
-            return [outputPromText(data),outputStatusText('MAS',outputStatus(data,'masStatus'),data.masSource||''),outputStatusText('Fetal distress',outputStatus(data,'fetalDistressStatus'),data.fetalDistressSource||'')].map(text=>hlSource(text)+'.').join(' ');
-        }
-        function outputGAWeeks(data) {
-            if(data.gaWeeks!==undefined) return Number.isFinite(data.gaWeeks)?data.gaWeeks:null;
-            const found=String(data.ga||'').match(/^\d+(?:\.\d+)?/);
-            return found?Number(found[0]):null;
-        }
-        function outputDeliveryText(data) {
-            if(!data.deliveryMode||data.deliveryMode==='?') return 'delivery mode not documented';
-            let value=data.deliveryMode==='NSD'?'vaginal delivery':data.deliveryMode==='C/S'?`${data.csPrefix||''}cesarean section`:data.deliveryMode;
-            if(data.deliveryMode==='C/S'&&data.csReason) value+=` due to ${data.csReason}`;
-            const details=[];
-            if(data.vacuumMatch) details.push('vacuum assistance');
-            if(data.forcepsMatch) details.push('forceps assistance');
-            if(data.painless) details.push('painless labor');
-            if(details.length) value+=` with ${joinOxford(details)}`;
-            return value;
-        }
-        function outputBirthText(data) {
-            return narrativeBirthText(data);
-        }
-        function outputApgarText(data) {
-            const scores=String(data.apgar||'').split(/->|to/).map(value=>value.trim());
-            if(scores.length<2||scores.some(value=>!/^\d+$/.test(value))) return 'APGAR scores were not documented or could not be resolved from the supplied text.';
-            return `APGAR scores were ${hlSource(scores[0])} and ${hlSource(scores[1])} at 1 and 5 minutes, respectively.`;
-        }
-        function outputManualPE(data, peFindings) {
-            const selected=peFindings.filter(finding=>!alreadyRecordedPE(data,finding));
-            return selected.length?`Selected examination findings: ${joinOxford(selected.map(hlSource))}.`:'';
-        }
-        function outputAssessment(data,peFindings) {
-            return [outputManualPE(data,peFindings),generateRecordedAssessment(data,peFindings)].filter(Boolean).join(' ')||'Physical examination findings were not documented in the supplied text.';
-        }
-        function outputSelectedPlans(data,peFindings) {
-            const plans=[];
-            if(document.getElementById('sepsisWorkup')?.checked){
-                const selected=Array.from(document.querySelectorAll('input[name="sepsisReason"]:checked')).map(input=>input.value);
-                const labels={prom:'prolonged PROM (>18 hours)',gbs:'GBS colonization with incomplete IAP',fever:'neonatal fever',maternal_fever:'maternal fever'};
-                const reasons=selected.map(value=>labels[value]).filter(Boolean);
-                plans.push(`Sepsis evaluation plan selected${reasons.length?` for ${joinOxford(reasons)}`:''}: CBC/DC, CRP, and blood culture. Completion and results require confirmation from the clinical record.`);
+        function recordedDiagnosisFindings(data,dxMap) {
+            const records=getClinicalSourceRecords(data), clinicalLines=new Set(Object.values(records).flat());
+            let source=String(data.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
+            const hip=data.recordedAssessment?.hip;
+            const hipSource=String(hip?.renderSource||(!source&&hip?.source)||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
+            if(hipSource&&!source.includes(hipSource))source=[source,hipSource].filter(Boolean).join('\n');
+            source=templateObservationParts(normalizeAssessmentText(source)).join('\n');
+            if(!source)return [];
+            const literal=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+            const fields=Object.entries(dxMap).map(([key,diagnosis])=>({name:key,re:key==='Heart murmur'?'\\b(?:heart\\s+)?(?:(?:systolic|diastolic)\\s+)?murmur\\b':'\\b'+literal(key)+'\\b',diagnosis}));
+            fields.push(...ASSESSMENT_FIELDS.hip.map(field=>({...field,diagnosis:(field.positive||field.name).replace(/^[a-z]/,letter=>letter.toUpperCase())})));
+            const full=parseAssessmentGroup(source,fields);
+            const starts='(?:(?:left|right|bilateral|lt|rt|no|not|positive|negative|possible|suspected)\\s+)*(?:'+fields.map(field=>field.re).join('|')+')';
+            const chunks=source.split(new RegExp('[,;\\n]\\s*(?='+starts+')','gi')).map(chunk=>chunk.trim()).filter(Boolean);
+            const observations=[];
+            for(const chunk of chunks){
+                for(const field of fields){
+                    const found=chunk.match(new RegExp(field.re,'i'));
+                    if(!found)continue;
+                    const result=parseAssessmentGroup(chunk,[field]).records[0];
+                    let state=result?.state||'unknown';
+                    const bare=new RegExp('^(?:(?:left|right|bilateral|lt|rt)\\s+)?(?:'+field.re+')[.]?$','i').test(chunk) ||field.name==='Heart murmur'&&/\bgrade\s+\d\s*\/\s*\d\b/i.test(chunk)&&!/\b(?:no|not|without|or|possible|suspected|unknown|equivocal)\b|[?±]|\(\s*-\s*\)/i.test(chunk);
+                    if(state==='unknown'&&bare)state='positive';
+                    else if(full.records.find(record=>record.name===field.name)?.state==='unknown')continue;
+                    const before=chunk.slice(0,found.index), after=chunk.slice(found.index+found[0].length);
+                    const side=before.match(/\b(left|right|lt|rt|bilateral|both)(?:[- ]sided)?\s*$/i)?.[1]
+                        ||after.match(/^\s*(?:\((?:[+-]|negative|positive)\)\s*)?[,;:]?\s*(?:on\s+(?:the\s+)?)?\(?\s*(left|right|lt|rt|bilateral|both)\b/i)?.[1]||'';
+                    const normalizedSide=/^(?:lt|left)$/i.test(side)?'left':/^(?:rt|right)$/i.test(side)?'right':side?'bilateral':'';
+                    const time=chunk.match(/\b(?:at\s+birth|(?:at|on)\s+(?:BR\s+)?admission|on\s+day\s+\d+(?:\s+of\s+life)?|at\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?|days?)\s+of\s+(?:age|life))\b/i)?.[0]?.toLowerCase()||'';
+                    let detail=(before+' '+(field.name==='Heart murmur'?found[0].match(/systolic|diastolic/i)?.[0]||'':'')+' '+after).replace(/\(\s*\+\s*\)/g,'').replace(/\b(?:(?:was|were|is|are)\s+)?(?:positive|pos|present)\b/gi,'').replace(/^\s*[,;:]|[,;:.]\s*$/g,'').replace(/\s+/g,' ').trim();
+                    detail=detail.replace(/^(?:left|right|lt|rt|bilateral|both)\s*[,;:]?\s*/i,normalizedSide?normalizedSide+' ':'').trim();
+                    observations.push({name:field.name,diagnosis:field.diagnosis,state,side:normalizedSide,time,detail});
+                }
             }
-            if(data.isHighRiskForHypoglycemia) plans.push('Blood glucose monitoring plan: monitor for 24 hours according to the selected risk context; retain actual measurements and management in the clinical record.');
-            const caput=document.getElementById('peCaput')?.checked&&document.querySelector('#caputDetails input[name="caputDetail"]:checked');
-            const ceph=peFindings.some(finding=>finding.includes('Cephalohematoma'))&&document.querySelector('#cephDetails input[name="cephDetail"]:checked');
-            if(caput||ceph) plans.push(`Selected head circumference monitoring plan: ${CAMPUS.hcMonitor.dischargeSentence}.`);
-            if(document.getElementById('nbcTransfer')?.checked){
-                const selected=document.querySelector('input[name="nbcReason"]:checked')?.value;
-                const reason=selected==='respiratory'?'respiratory symptoms':selected==='jaundice'?'jaundice':'';
-                plans.push(`Selected transfer plan: NBC${reason?` for ${reason}`:''}. Transfer completion and the subsequent course must follow the supplied record.`);
-            }
-            return plans.map(text=>hlSource(text)).join(' ');
-        }
-        function outputEducationPlan(peFindings) {
-            const conditions=peFindings.filter(finding=>/Undescended testis|Hydrocele/.test(finding));
-            if(!conditions.length) return '';
-            const detail=getVerbosity()==='long'
-                ?'Suggested counseling topics: explain the recorded finding, invite caregiver questions, discuss the treating clinician\'s follow-up plan, and document caregiver understanding after counseling. This checklist does not establish that counseling or follow-up arrangements have been completed.'
-                :'Suggested counseling topics: the recorded finding and the treating clinician\'s follow-up plan. Document counseling completion separately.';
-            return `Counseling checklist for ${joinOxford(conditions.map(hlSource))}. ${detail}`;
+            const definite=observations.filter(item=>item.state==='positive'&&!observations.some(other=>other.name===item.name&&other.state!=='positive'
+                &&(!item.side||!other.side||item.side==='bilateral'||other.side==='bilateral'||item.side===other.side)
+                &&(!item.time||!other.time||item.time===other.time)));
+            return [...new Map(definite.map(item=>[item.diagnosis+'|'+item.detail,item])).values()];
         }
 
-        // Narrative rendering changes grammar, not clinical meaning. Only
-        // recognizable statements receive a sentence template; unfamiliar or
-        // conditional shorthand remains an attributed quotation. In particular,
-        // these helpers never infer a diagnosis, treatment response or discharge.
-        function narrativeSentence(value) {
-            const text=String(value||'').trim();
-            if(!text) return '';
-            const sentence=text.replace(/^[a-z]/,letter=>letter.toUpperCase());
-            return /[.!?。！？][”"')\]]?$/.test(sentence)?sentence:sentence+'.';
+        // The four documents below use the original templates. These adapters
+        // only supply values to their existing fields and finding sentences.
+        function generateNarrativeReview() { return ''; }
+        function updateNarrativeReviews() {
+            for(const element of [DOM.summaryReview,DOM.dischargeReview]){
+                element.innerHTML='';element.classList.add('hidden');
+            }
         }
-        function narrativeQuoted(value,kind) {
-            const labels={prenatalSteroid:'prenatal steroid',prenatalAntibiotics:'prenatal antibiotic',resuscitation:'resuscitation',labs:'laboratory',treatment:'treatment',course:'clinical course',disposition:'disposition',education:'counseling',pe:'physical examination'};
-            return `The ${labels[kind]||'clinical'} record stated “${String(value).trim().replace(/\.$/,'')}”.`;
-        }
-        function narrativeClinicalClause(value,kind) {
-            const original=value.trim();
-            const timed=original.match(/^(?:lab(?:s|oratory)?(?:\s+(?:data|results?))?|treatments?|medications?|therapy|respiratory\s+support|resuscitation)\s+((?:at|on)\s+(?:(?:BR|nursery)\s+)?admission)\s*[:：]\s*(.+)$/i)
-                ||original.match(/^((?:at|on)\s+(?:(?:BR|nursery)\s+)?admission|at\s+birth|at\s+delivery|in\s+the\s+delivery\s+room)\s*[:：]\s*(.+)$/i);
-            if(timed){
-                const statement=narrativeClinicalClause(timed[2],kind).replace(/^[A-Z](?=[a-z])/,letter=>letter.toLowerCase());
-                return narrativeSentence(`${timed[1]}, ${statement}`);
-            }
-            let text=original.replace(/^(?:(?:BR|hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|prophylaxis|immunizations?|vaccin(?:e|ation)s?|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition)\s*[:：]\s*/i,'').trim();
-            if(!text) return '';
-            text=text.replace(/\.$/,'');
-            let match;
-
-            // Conditional shorthand does not establish that an action happened.
-            // Keep its scope together instead of adding a retrospective tense.
-            if(/\b(?:if|unless|consider(?:ing)?|may|might|would|could)\b/i.test(text)) return narrativeQuoted(original,kind);
-
-            // Keep source-supplied temporal, causal and conditional language
-            // intact. No connecting word such as "therefore" is inserted.
-            if((match=text.match(/^persistent fever,\s*(antibiotics)\s+(started|initiated)(.*)$/i)))
-                return narrativeSentence(`The infant had persistent fever, and ${match[1]} were ${match[2]}${match[3]}`);
-            if(/^persistent fever$/i.test(text)) return 'The infant had persistent fever.';
-            if(/^fever\s+(?:resolved|persisted|recurred|improved|continued)\b/i.test(text)) return narrativeSentence(`The ${text.replace(/^fever/i,'fever')}`);
-
-            // A complete treatment sentence such as "glucose gel was given"
-            // is not a glucose measurement merely because of its first word.
-            if(kind==='treatment'&&/^[^:]+\b(?:was|were|had been|has been|have been)\b/i.test(text))return narrativeSentence(text);
-
-            const lab=/^(blood\s+glucose|glucose|D-?stick|CRP|CBC(?:\/DC)?|blood\s+culture|(?:total|serum|transcutaneous)\s+bilirubin|bilirubin|T[SC]B|head\s+circumference|HC)\s*(?::\s*|\s+)(.+)$/i;
-            if((match=text.match(lab))){
-                const name=match[1], result=match[2].trim();
-                if(/\b(?:unknown|uncertain|unconfirmed|suspected|possible)\b|[?±]/i.test(result)||/\bpending\b/i.test(result)&&!/^pending$/i.test(result)) return narrativeQuoted(original,kind);
-                if(/^(?:was|were|is|are|remained|rose|fell|increased|decreased|returned)\b/i.test(result)) return narrativeSentence(`${name} ${result}`);
-                if(/^(?:low|high|elevated|decreased),\s*\d/i.test(result)) return narrativeSentence(`${name} was ${result.replace(/,\s*/, ' at ')}`);
-                if(/^(?:positive|negative|elevated|low|high|normal|within normal limits|\d+(?:\.\d+)?)\b/i.test(result)) return narrativeSentence(`${name} was ${result}`);
-                if(/^pending$/i.test(result)) return narrativeSentence(`The ${name.toLowerCase()} result was pending`);
-                if(/^(?:not done|not performed|not obtained)$/i.test(result)) return narrativeSentence(`${name} was ${result}`);
-                if(/^(?:planned|requested|ordered)(?:\s|$)/i.test(result)) return narrativeSentence(`${name} was ${result}`);
-                return narrativeQuoted(original,kind);
-            }
-            if((match=text.match(/^(?:respiratory|oxygen)\s+support\s*:\s*(.+)$/i))){
-                const support=match[1];
-                if(/^(?:CPAP|BiPAP|O2\s*hood|HFNC)\s+(?:(?:not|not yet)\s+)?(?:started|initiated|stopped|discontinued|planned)\b/i.test(support)) return narrativeClinicalClause(support,'treatment');
-                if(/^(?:CPAP|BiPAP|O2\s*hood|HFNC|oxygen|room air)(?:\s+at\s+[^;]+)?$/i.test(support)&&!/[?±]|\b(?:not|no|without|planned|pending|unknown|uncertain|declined|refused|deferred|withheld)\b/i.test(support)) return narrativeSentence(`Respiratory support consisted of ${support}`);
-                return narrativeQuoted(original,kind);
-            }
-            if((match=text.match(/^((?:manual\s+)?positive\s+pressure\s+ventilation|PPV|intubation|chest\s+compressions?|free\s*flow\s*oxygen|FFO|neopuff|UVC)\s*\(([+-])\)$/i))){
-                const plural=/compressions$/i.test(match[1]), positive=match[2]==='+';
-                return narrativeSentence(`${match[1]} ${plural?'were':'was'} ${positive?'':'not '}${/oxygen|FFO|ventilation|PPV|neopuff/i.test(match[1])?'provided':'performed'}`);
-            }
-            // A past participle explicitly supplied by the author establishes
-            // the action state. Adding "was/were" does not complete a plan.
-            if((match=text.match(/^(HBIG|HBV\s+vaccine|Vitamin\s*K1?|phototherapy|antibiotics|ampicillin(?:\s+\d[^,;]*?)?|gentamicin(?:\s+\d[^,;]*?)?|CPAP|BiPAP|O2\s*hood|HFNC)\s*:?[ \t]+((?:(?:not|not yet|already)\s+)?(?:given|administered|started|initiated|continued|stopped|discontinued|withheld|planned|declined|refused|completed)\b.*)$/i))){
-                return narrativeSentence(`${match[1]} ${/^antibiotics$/i.test(match[1])?'were':'was'} ${match[2]}`);
-            }
-            if((match=text.match(/^(caregivers?|parents?)\s+((?:(?:not|not yet)\s+)?counsel(?:ed|led)\b.*)$/i))) return narrativeSentence(`${match[1]} ${/s$/i.test(match[1])?'were':'was'} ${match[2]}`);
-            if((match=text.match(/^feeding(?:\s+(?:volume|tolerance|history))?\s*:\s*(.+)$/i))){
-                const feeding=match[1];
-                if(/^(?:poor|well tolerated|not tolerated|improved|adequate|established|not established)$/i.test(feeding)) return narrativeSentence(`Feeding was ${feeding}`);
-                if(/^(?:breast milk|formula|mixed feeding|breastfeeding)\b/i.test(feeding)&&!/[?±]|\b(?:if|not|no|without|planned|consider|pending|unknown|uncertain|declined|refused|deferred|withheld)\b/i.test(feeding)) return narrativeSentence(`Feeding consisted of ${feeding}`);
-                return narrativeQuoted(original,kind);
-            }
-            if((match=text.match(/^vital signs\s*:\s*(stable|unstable|normal|abnormal)$/i))) return narrativeSentence(`Vital signs were ${match[1]}`);
-            if((match=text.match(/^condition at discharge\s*:\s*(.+)$/i))) return narrativeSentence(`The infant's condition at discharge was ${match[1]}`);
-            if((match=text.match(/^discharge\s*:\s*((?:clinically\s+)?stable|in stable condition)((?:\s+(?:at|on)\b.*)?)$/i))) return narrativeSentence(`The infant was discharged in ${/^clinically/i.test(match[1])?'clinically ':''}stable condition${match[2]}`);
-            if((match=text.match(/^discharge\s*:\s*(planned|pending|deferred|cancelled|canceled)(.*)$/i))) return narrativeSentence(`Discharge was ${match[1]}${match[2]}`);
-            if((match=text.match(/^(?:OPD\s+)?follow[- ]?up\s+(?:on|for)\s+(\d{4}[-/]\d{1,2}[-/]\d{1,2})$/i))) return narrativeSentence(`${/^OPD/i.test(text)?'OPD follow-up':'Follow-up'} was planned for ${match[1]}`);
-            if((match=text.match(/^follow[- ]?up\s*:\s*(.+)$/i))) return narrativeQuoted(original,kind);
-            if((match=text.match(/^(admitted|transferred|discharged)\s+(to|for|on|in|home|with)\b(.*)$/i))) return narrativeSentence(`The infant was ${match[1].toLowerCase()} ${match[2].toLowerCase()}${match[3]}`);
-            if((match=text.match(/^admission(?:\s+reason)?\s*:\s*(.+)$/i))&&!/\b(?:planned|if|consider|pending)\b/i.test(match[1])) return narrativeSentence(`The infant was admitted for ${match[1]}`);
-            if((match=text.match(/^(?:prenatal|antenatal|maternal)\s+antibiotics?\s*:\s*(.+)$/i))&&!/\b(?:not|no|if|consider|planned|pending|unknown|declined|refused)\b|\?/i.test(match[1])) return narrativeSentence(`Maternal prenatal antibiotic use included ${match[1]}`);
-            if((match=text.match(/^(?:prenatal|antenatal|maternal)\s+(?:steroids?|corticosteroids?)(?:\s+use)?\s*:\s*(.+?)\s+x\s*(\d+)\s+doses?\s+completed$/i))) return narrativeSentence(`A prenatal course of ${match[2]} doses of ${match[1]} was completed`);
-
-            // Already grammatical source sentences retain their own tense and
-            // qualifications, including refusals and conditional follow-up.
-            if(/^(?:the\s+(?:infant|baby|newborn|mother|parents|caregivers|fever)|(?:this\s+)?(?:infant|baby|newborn)|parents?|caregivers?|mother|feeds?|feeding|fever)\b.*\b(?:was|were|is|are|had|has|have|received|remained|developed|declined|refused|resolved|persisted|tolerated|improved|deteriorated|will|may|should)\b/i.test(text)) return narrativeSentence(text);
-            if(/^[^:]+\b(?:was|were|had been|has been|have been)\b/i.test(text)) return narrativeSentence(text);
-            if(/^(?:at\s+\d|on\s+(?:day\s+\d|\d{4}[-/])|during\b|after\b|before\b|following\b|if\b)/i.test(text)) return narrativeSentence(text);
-            return narrativeQuoted(original,kind);
-        }
-        function narrativeClinicalRecord(line,kind) {
-            // A heading alone is context for its continuation lines, not a
-            // clinical fact and not a sentence in the copied note.
-            if(/^(?:(?:BR|hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition|(?:prenatal|antenatal)\s+(?:steroid(?:\s+use)?|antibiotics?))\s*[:：]\s*$/i.test(line)) return '';
-            if(kind==='resuscitation'){
-                const actions=line.replace(/^resuscitation\s*:\s*/i,'').split(/,\s*/);
-                const sentences=actions.map(action=>narrativeClinicalClause(action,kind));
-                if(actions.length>1&&sentences.every(sentence=>!sentence.includes(' record stated “'))) return hlSource(sentences.join(' '));
-            }
-            const pieces=line.split(/;\s*/).filter(Boolean);
-            const sentences=pieces.map(piece=>narrativeClinicalClause(piece,kind));
-            // Preserve ambiguous compound statements together so a qualifier
-            // cannot be detached from its subject while making the prose smooth.
-            let text=pieces.length>1&&sentences.some(sentence=>/ record stated “/.test(sentence))?narrativeQuoted(line,kind):sentences.filter(Boolean).join(' ');
-            if(kind==='labs'&&pieces.length===2&&!text.includes(' record stated “')) text=sentences[0].replace(/\.$/,'')+', and '+sentences[1].replace(/^[A-Z](?=[a-z])/,letter=>letter.toLowerCase());
-            return hlSource(text);
-        }
-        function narrativeClinicalEntries(data,records) {
-            const source=String(data.sourceText||'');
-            const entries=Object.entries(records).flatMap(([kind,lines])=>[...new Set(lines)].map(line=>({kind,line,order:source.indexOf(line)})));
-            return entries.sort((a,b)=>(a.order<0?Infinity:a.order)-(b.order<0?Infinity:b.order));
-        }
-        function narrativePE(data,peFindings,records) {
-            // Shared DDH interpretation stays intact. Clinical records captured
-            // inside a PE block are rendered once in their clinical paragraph.
-            const parts=[generateRecordedAssessment({...data,sourcePE:''},[])];
-            const clinicalLines=new Set(Object.values(records).flat());
-            const source=String(data.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
-            const conflicts=collectPEConflicts(data,peFindings);
-            if(source){
-                const observations=source.split(/[,;\n]\s*/).filter(Boolean);
-                const signed=observations.map(value=>value.match(/^([^()]+?)\s*\(([+-])\)(\s+(?:at|on|since)\b.*)?$/));
-                const detailedMurmur=source.match(/^heart murmur\s*\(\+\),\s*(grade\s+\d+\/\d+),\s*(.+)$/i);
-                const mixed=signed.every(Boolean)&&signed.every(match=>!match[3])&&signed.some(first=>signed.some(second=>first[1].trim().toLowerCase()===second[1].trim().toLowerCase()&&first[2]!==second[2]));
-                if(conflicts.length||/\b(?:or|no|not|without|possible|suspected|uncertain|equivocal)\b|或|[?±]/i.test(source)) parts.push(hlSource(narrativeQuoted(source,'pe')));
-                else if(mixed) parts.push(hlSource(`The examination record contained conflicting findings. ${narrativeQuoted(source,'pe')}`));
-                else if(signed.every(Boolean)&&signed.some(match=>match[3])){
-                    parts.push(...signed.map(match=>hlSource(narrativeSentence(`${match[1]} was ${match[2]==='+'?'present':'absent'}${match[3]||''}`))));
-                }else if(signed.every(Boolean)){
-                    const findingName=value=>/^(?:Barlow|Ortolani|Galeazzi)\b/.test(value)?value:value.replace(/^[A-Z](?=[a-z])/,letter=>letter.toLowerCase());
-                    const present=signed.filter(match=>match[2]==='+').map(match=>findingName(match[1]));
-                    const absent=signed.filter(match=>match[2]==='-').map(match=>findingName(match[1]));
-                    if(present.length) parts.push(hlSource(narrativeSentence(`${joinOxford(present)} ${present.length===1?'was':'were'} present`)));
-                    if(absent.length) parts.push(hlSource(narrativeSentence(`${joinOxford(absent)} ${absent.length===1?'was':'were'} absent`)));
-                }else if(detailedMurmur){
-                    parts.push(hlSource(narrativeSentence(`A heart murmur was present (${detailedMurmur[1]}, ${detailedMurmur[2].replace(/\.$/,'')})`)));
-                }else if(/^(?:(?:left|right|bilateral)\s+)?(?:preauricular pit|ear pit|hydrocele|inguinal hernia|undescended testis|grade\s+\d\/\d\s+[^;\n]+murmur)$/i.test(source)){
-                    parts.push(hlSource(narrativeSentence(`Physical examination showed ${/^bilateral/i.test(source)?'':/^[aeiou]/i.test(source)?'an ':'a '}${source}`)));
-                }else parts.push(hlSource(narrativeQuoted(source,'pe')));
-            }
-            const feverCovered=records.course.some(line=>/^(?:(?:hospital|clinical|postnatal|nursery|neonatal)\s+course\s*:\s*)?(?:persistent fever\b|fever\s+(?:resolved|persisted|recurred)\b)/i.test(line));
-            const selected=peFindings.filter(finding=>!alreadyRecordedPE(data,finding)&&!conflicts.includes(finding)&&!(finding==='Fever'&&feverCovered)).map(finding=>finding.replace(/\s*\(check HC [^)]*\)/gi,''));
-            if(selected.length) parts.push(hlSource(narrativeSentence(`Physical examination findings included ${joinOxford(selected)}`)));
-            // Unlike missing-data prompts, an actual source contradiction belongs
-            // in the clinical note so copying cannot conceal it.
-            if(conflicts.length) parts.push(`${hlSource('PE source conflict: '+joinOxford(conflicts))}. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection.`);
-            return parts.filter(Boolean).join(' ');
-        }
-        // Turn the existing birth and maternal parser results into prose.  These
-        // helpers do not infer a diagnosis, treatment response, or completion.
-        function maternalNarrativeClean(value) {
+        function templateValue(value) {
             return String(value||'').trim().replace(/^[,;:\s]+|[,;\s]+$/g,'').replace(/[.]$/,'').trim();
         }
-        function maternalNarrativeSentence(value) {
-            const text=maternalNarrativeClean(value);
-            if(!text) return '';
-            return hlSource(text+(/[.!?]$/.test(text)?'':'.'));
+        function templateSentence(value) {
+            const text=templateValue(value);
+            if(!text)return '';
+            return hlSource(text.replace(/^[a-z]/,letter=>letter.toUpperCase())+'.');
         }
-        function maternalNarrativeEntries(source,key,audience='maternal') {
-            return coreRecords(String(source||''),key,audience).map(record=>{
-                const result=coreResult(record);
-                let before=record.before;
-                const preceding=coreTokens(before).at(-1);
-                if(preceding) before=before.slice(preceding.end).replace(/^\s*\([^)]*\)/,'');
-                before=before.replace(/^\s*(?:maternal|mother(?:'s)?|prenatal|antenatal)\s*:?\s*/i,'').trim();
-                let after=record.after, tail=result.tail;
-                const next=coreTokens(record.source).find(token=>token.index>=record.end);
-                // A prefix belonging to the next field is not a qualifier of
-                // this one (e.g. "GBS(+) ...; complete IAP").
-                if(next?.key==='iap') {
-                    const prefix=/(?:[,;]\s*)?(?:s\/p\s*)?(?:(?:no|without|not)\s+)?(?:complete(?:d)?|adequate|incomplete|inadequate|partial)?\s*$/i;
-                    after=after.replace(prefix,'');tail=tail.replace(prefix,'');
-                }
-                if(next) {
-                    after=after.replace(/(?:[,;]\s*)?\b(?:and|or)\s*$/i,'');
-                    tail=tail.replace(/(?:[,;]\s*)?\b(?:and|or)\s*$/i,'');
-                }
-                const conditional=/\b(?:possible|suspected|if|unless|rule\s+out|r\/o|consider)\s*$/i.test(record.before);
-                const unresolved=result.status==='unknown'&&(result.explicit||conditional||/\bor\b|或/i.test(record.after));
-                const clause=unresolved&&/\bor\b|或/i.test(record.before+' '+record.after)
-                    ?record.source:([before,record.label+after].filter(Boolean).join(' '));
-                return {record,result,tail:maternalNarrativeClean(tail),clause:maternalNarrativeClean(clause),unresolved};
-            });
+        function templateStatus(value) { return value==='positive'?'+':value==='negative'?'-':'?'; }
+        function templateCoreTail(data,key) {
+            const source=key==='prom'?data.prom?.source:data[{gbs:'gbsSource',iap:'iapSource',gdm:'gdmSource',preeclampsia:'preEclampsiaSource',mas:'masSource',fetalDistress:'fetalDistressSource'}[key]]||data.serologySource?.[key];
+            return [...new Set(coreRecords(source||'',key,key==='mas'||key==='fetalDistress'?'all':'maternal').map(record=>templateValue(coreResult(record).tail)).filter(Boolean))].join('; ');
         }
-        function maternalNarrativeQuotedEntries(entries) {
-            return [...new Set(entries.map(entry=>entry.clause).filter(Boolean))].map(value=>'“'+value+'”').join('; ');
+        function templateIAPDetail(data) {
+            const treatment=templateCoreTail(data,'gbs').replace(/[,;]?\s*(?:complete|completed|adequate|incomplete|inadequate)\s*$/i,'');
+            const details=[templateCoreTail(data,'iap').replace(/^(?:complete|completed|adequate|incomplete|inadequate)\b\s*[:;,]?\s*/i,'')];
+            if(/\b(?:ampicillin|penicillin|amoxicillin|cefazolin|clindamycin|vancomycin|antibiotics?)\b/i.test(treatment))details.push(treatment);
+            for(const record of coreRecords(data.iapSource||'','iap')){
+                const text=templateValue(record.after.replace(/^\s*[:=]\s*/,''));
+                if(/\b(?:pending|unknown|uncertain|not\s+documented)\b|[?±]/i.test(text))details.push('IAP '+text);
+            }
+            if(details.some(detail=>/\bIAP\s+(?:pending|unknown|uncertain|not\s+documented)\b/i.test(detail))&&data.iapStatus==='adequate')details.unshift('complete IAP');
+            return [...new Set(details.filter(Boolean))].join('; ');
         }
-        function maternalNarrativeUnresolved(label,status,entries) {
-            const source=maternalNarrativeQuotedEntries(entries);
-            if(!source) return '';
-            if(status==='conflict') return `${label} entries were conflicting (${source})`;
-            if(entries.length===1&&!entries[0].tail) {
-                const result=String(entries[0].result.value||'').trim().toLowerCase();
-                if(/^(?:unknown|pending|uncertain|equivocal|not (?:tested|done|assessed|documented|available|known))$/.test(result))
-                    return `${label} was recorded as ${result}`;
+        function templateClinicalValues(data,pattern,keys) {
+            const records=getClinicalSourceRecords(data), values=[];
+            for(const key of keys||Object.keys(records))for(const source of records[key]||[]){
+                // A heading is a field name, never an additional source section.
+                const body=source.replace(/^(?:(?:BR|hospital|clinical|postnatal|nursery|neonatal)\s+course|course|treatments?|medications?|therapy|lab(?:s|oratory)?(?:\s+(?:data|results?))?|resuscitation|education|counsel(?:ing|ling)|disposition|prophylaxis)\s*[:：]\s*/i,'').trim();
+                const clauses=body.split(/;\s*(?!or\b|或)/i).flatMap(value=>value.split(/\.\s+(?=(?:HBV|HBIG|Vitamin|Blood\s+(?:glucose|culture)|CRP|CBC|Feeding|Rooming|Bilirubin|T[SC]B|Respiratory|Oxygen|Discharge|Follow[- ]?up)\b)/));
+                for(const text of clauses)if(text&&pattern.test(text))values.push(text);
             }
-            return `${label} was unresolved in the supplied record (${source})`;
+            return [...new Set(values)];
         }
-        function maternalNarrativeTailSentence(detail) {
-            const text=maternalNarrativeClean(detail);
-            if(!text) return '';
-            const no=text.match(/^(?:no|without)\s+(.+)$/i);
-            if(no) return `There was no ${no[1]}`;
-            return `The accompanying note stated “${text}”`;
+        function templateField(data,key) {
+            const records=getClinicalSourceRecords(data);
+            return [...new Set((records[key]||[]).map(line=>line.replace(new RegExp('^(?:'+(key==='prenatalSteroid'?'(?:prenatal|antenatal|maternal)\\s+(?:steroids?|corticosteroids?)(?:\\s+use)?':'(?:prenatal|antenatal|maternal|intrapartum)\\s+(?:antibiotics?|abx)')+')\\s*[:：]\\s*','i'),'').trim()).filter(Boolean))].join('; ');
         }
-
-        function narrativeBirthText(data) {
-            const parts=[];
-            const known=value=>value!==undefined&&value!==null&&value!==''&&value!=='?';
-            const gaEntries=maternalNarrativeEntries(data.gaSource,'ga','all');
-            const bwEntries=maternalNarrativeEntries(data.bwSource,'bw','all');
-            const qualified=entries=>entries.some(entry=>/[?±]|\b(?:unknown|uncertain|estimated|approximately|about|pending|corrected|revised|amended)\b/i.test(entry.clause));
-            const ga=known(data.ga)&&!qualified(gaEntries)?`${data.ga} weeks of gestation`:'';
-            const bw=known(data.bw)&&!qualified(bwEntries)?`${data.bw} gm`:'';
-            const gender=['male','female'].includes(data.selectedGender)?data.selectedGender+' ':'';
-            const age=known(data.motherAge)?data.motherAge+'-year-old ':'';
-            const gpa=['g','p','a'].filter(key=>known(data[key])).map(key=>key.toUpperCase()+data[key]).join('');
-            const mother=age||gpa?`${/^(?:8\d?|11|18)-/.test(age)?'an':'a'} ${age}${gpa?gpa+' ':''}mother`:'';
-            const deliveryData={...data}, deliveryNotes=[];
-            for(const [pattern,property,label] of [
-                [/\bvac+uum(?:[\s-]*(?:assist(?:ed|ance)?|assited))?\b/gi,'vacuumMatch','Vacuum assistance'],
-                [/\bforceps?(?:[\s-]*(?:assisted|assited))?\b/gi,'forcepsMatch','Forceps assistance'],
-                [/\bpainless(?:\s+labor)?\b/gi,'painless','Painless labor'],
-            ]) {
-                const observations=[...String(data.deliveryLine||'').matchAll(pattern)].map(match=>{
-                    const before=data.deliveryLine.slice(0,match.index).split(/[;,\n]/).at(-1);
-                    const after=data.deliveryLine.slice(match.index+match[0].length);
-                    return {...coreResult({before,after}),qualified:/\b(?:or|possible|suspected|considered|if)\s*$/i.test(before)};
-                });
-                const negative=observations.some(result=>result.status==='negative');
-                const positive=observations.some(result=>result.status==='positive');
-                const unresolved=observations.some(result=>result.status==='conflict'||result.status==='unknown'&&(result.explicit||result.qualified||/\bor\b|或/i.test(result.tail)));
-                if(negative||unresolved) {
-                    deliveryData[property]=false;
-                    if(negative&&!positive&&!unresolved) deliveryNotes.push(`${label} was not used`);
-                    else deliveryNotes.push(`The ${label.toLowerCase()} entry was unresolved (“${maternalNarrativeClean(data.deliveryLine).replace(/\n/g,'; ')}”)`);
-                }
-            }
-            let delivery=known(data.deliveryMode)?outputDeliveryText(deliveryData):'';
-            // The delivery parser supplies the indication as source text.  Do
-            // not append an assistance detail twice when it is already there.
-            if(data.csReason) {
-                const copy={...deliveryData};
-                if(/\bvac+uum\b/i.test(data.csReason)) copy.vacuumMatch=null;
-                if(/\bforceps?\b/i.test(data.csReason)) copy.forcepsMatch=null;
-                if(/\bpainless\b/i.test(data.csReason)) copy.painless=false;
-                delivery=outputDeliveryText(copy);
-            }
-            if(ga||delivery||mother) parts.push(`This ${gender}newborn was born${mother?' to '+mother:''}${ga?' at '+ga:''}${delivery?' by '+delivery:''}`);
-            else if(gender) parts.push(`The newborn was ${data.selectedGender}`);
-            const sizes={AGA:'appropriate',SGA:'small',LGA:'large'};
-            const size=sizes[data.aga];
-            if(bw) parts.push(`The birth weight was ${bw}${size?', and the infant was '+size+' for gestational age':''}`);
-            else if(size) parts.push(`The infant was ${size} for gestational age`);
-            if((!ga&&gaEntries.length)) parts.push(`The gestational-age entry was ${maternalNarrativeQuotedEntries(gaEntries)}`);
-            if((!bw&&bwEntries.length)) parts.push(`The birth-weight entry was ${maternalNarrativeQuotedEntries(bwEntries)}`);
-            if(!delivery&&data.deliveryLine) parts.push(`The mode of delivery was unresolved in the record (“${maternalNarrativeClean(data.deliveryLine).replace(/\n/g,'; ')}”)`);
-            const uncertainDelivery=deliveryNotes.filter(note=>note.includes('entry was unresolved'));
-            parts.push(...deliveryNotes.filter(note=>!note.includes('entry was unresolved')));
-            if(uncertainDelivery.length>1) parts.push(`The delivery assistance entry was unresolved (“${maternalNarrativeClean(data.deliveryLine).replace(/\n/g,'; ')}”)`);
-            else parts.push(...uncertainDelivery);
-            const maternalRows=coreRows(String(data.sourceText||''),'maternal');
-            const ages=[...new Set(maternalRows.flatMap(row=>[...row.text.matchAll(/\b(\d+)\s*(?:y\/o|years?[- ]old|years?\s+of\s+age)\b/gi)].map(match=>match[1])))];
-            if(!known(data.motherAge)&&ages.length>1) parts.push(`The record contained maternal ages of ${joinOxford(ages)} years`);
-            const histories=[...String(data.sourceText||'').matchAll(/\bG\s*(\d+)\s*P\s*(\d+)\s*(?:A\s*(\d+))?/gi)];
-            if(['g','p','a'].some((key,index)=>!known(data[key])&&new Set(histories.map(match=>match[index+1]).filter(Boolean)).size>1))
-                parts.push(`The record contained differing obstetric histories (${joinOxford([...new Set(histories.map(match=>match[0].trim()))])})`);
-            return parts.map(maternalNarrativeSentence).filter(Boolean).join(' ');
+        function templateCareSentence(value) {
+            let text=templateValue(value);
+            const be=subject=>/\b(?:antibiotics|results|levels|feeds|parents|caregivers|vaccines)\s*$/i.test(subject)?'were':'was';
+            // Only a labeled field separator becomes prose; 03:00 stays a time.
+            text=text.replace(/^([^:]+):\s+(.+)$/,(all,subject,body)=>subject+' '+be(subject)+' '+body)
+                .replace(/\b(?:was|were)\s+(was|were|is|are)\b/gi,'$1')
+                .replace(/^(.+?)\s+(given|administered|started|initiated|stopped|discontinued|deferred|declined|refused|planned|pending|cancelled|canceled|not\s+(?:yet\s+)?(?:given|administered|done|performed|arranged|started|admitted|discharged))\b/i,(all,subject,verb)=>/\b(?:was|were|has|had|not)\b/i.test(subject)||/^(?:the\s+)?(?:parents?|caregivers?|mother|infant|newborn|baby)$/i.test(subject)&&/^(?:declined|refused)$/i.test(verb)?all:subject+' '+be(subject)+' '+verb)
+                .replace(/^(blood\s+culture|CRP|CBC(?:\/DC)?|blood\s+glucose|glucose|D-?stick|(?:total\s+)?bilirubin|T[SC]B|head\s+circumference|HC)\s+(?=\d|WNL\b|positive\b|negative\b)/i,(all,subject)=>subject+' '+be(subject)+' ');
+            return templateSentence(text);
         }
-
-        function narrativeMaternalText(data) {
-            data=hivOutputData(data);
-            const parts=[], negativeHistory=[];
-            const bloodEntries=maternalNarrativeEntries(data.bloodGroupSource,'blood');
-            const blood=data.bloodGroup;
-            const simpleBlood=/^\s*[:=]?\s*(?:type\s*)?(?:AB|A|B|O)\b(?:\s*type)?(?:\s*,?\s*(?:Rh(?:D)?\s*[:=]?\s*)?\(?\s*(?:positive|negative|pos|neg|[+-])\s*\)?)?\s*[.]?\s*$/i;
-            if(data.bloodGroupStatus==='conflict') parts.push(maternalNarrativeUnresolved('Maternal blood-type','conflict',bloodEntries));
-            else if(blood&&!blood.startsWith('?')&&bloodEntries.every(entry=>simpleBlood.test(entry.record.after))) parts.push(`The mother's blood type was ${blood}`);
-            else if(bloodEntries.length) parts.push(`The maternal blood-type entry was ${maternalNarrativeQuotedEntries(bloodEntries)}`);
-
-            const gbsEntries=maternalNarrativeEntries(data.gbsSource,'gbs');
-            const gbs=outputStatus(data,'gbsStatus');
-            if(gbs==='conflict'||gbs==='unknown') parts.push(maternalNarrativeUnresolved('Maternal GBS status',gbs,gbsEntries));
-            else {
-                const known=gbsEntries.filter(entry=>!entry.unresolved);
-                const tails=[...new Set(known.map(entry=>entry.tail).filter(Boolean))];
-                const treatment=tails.length===1?tails[0].match(/^with\s+(.+?)(?:,\s*|\s+)(started|given|administered)(.*)$/i):null;
-                if(treatment&&!/\b(?:no|not|if|planned|consider|pending|unknown)\b|[?±]/i.test(tails[0])) {
-                    parts.push(`Maternal GBS screening was ${gbs}`);
-                    parts.push(treatment[2].toLowerCase()==='started'?`Maternal treatment with ${treatment[1]} was started${treatment[3]}`:`The mother was ${treatment[2]} ${treatment[1]}${treatment[3]}`);
-                } else if(tails.length===1&&/^(?:at|on|during|in)\b/i.test(tails[0])) parts.push(`Maternal GBS screening was ${gbs} ${tails[0]}`);
-                else {
-                    parts.push(`Maternal GBS screening was ${gbs}`);
-                    tails.forEach(tail=>parts.push(maternalNarrativeTailSentence(tail)));
-                }
-                const unresolved=gbsEntries.filter(entry=>entry.unresolved);
-                if(unresolved.length) parts.push(`An additional maternal GBS entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-            }
-
-            const iapEntries=maternalNarrativeEntries(data.iapSource,'iap');
-            if(data.iapSource) {
-                const iap=data.iapStatus;
-                const uncertain=iapEntries.filter(entry=>/\b(?:unknown|pending|uncertain|not documented)\b|[?±]/i.test(entry.record.after));
-                const details=[...new Set(iapEntries.filter(entry=>!uncertain.includes(entry)).map(entry=>maternalNarrativeClean(entry.record.after
-                    .replace(/^\s*[:=]?\s*(?:\(\s*[+-]\s*\)|(?:not\s+)?(?:complete(?:d)?|adequate|incomplete|inadequate|partial|given|received|none|no))\s*[:;,]?\s*/i,''))).filter(Boolean))];
-                if(iap==='conflict') parts.push(maternalNarrativeUnresolved('Intrapartum antibiotic prophylaxis','conflict',iapEntries));
-                else if(iap==='adequate'||iap==='inadequate') {
-                    parts.push(iap==='adequate'?'Intrapartum antibiotic prophylaxis was documented as adequate':'The infant was born without adequate intrapartum antibiotic prophylaxis');
-                    const absent=iapEntries.some(entry=>/^(?:no|without)$/i.test(entry.record.before.trim())||/^\s*[:=]?\s*(?:none|no|not\s+(?:given|received)|\(\s*-\s*\))\s*[.]?\s*$/i.test(entry.record.after));
-                    if(iap==='inadequate'&&absent) parts.push('No IAP was given');
-                    if(details.length===1&&!/\b(?:unknown|pending|uncertain|consider|planned|not)\b|[?±]/i.test(details[0]))
-                        parts.push(`The recorded intrapartum antibiotic regimen was ${details[0]}`);
-                    else details.forEach(detail=>parts.push(`The IAP note stated “${detail}”`));
-                    if(uncertain.length) parts.push(`An additional IAP entry stated ${maternalNarrativeQuotedEntries(uncertain)}`);
-                } else {
-                    const after=iapEntries.length===1?maternalNarrativeClean(iapEntries[0].record.after.replace(/^\s*[:=]\s*/,'')):'';
-                    if(/^(?:unknown|pending|uncertain|not documented)$/i.test(after)) parts.push(`Intrapartum antibiotic prophylaxis was recorded as ${after.toLowerCase()}`);
-                    else if(iapEntries.length===1&&(/\bs\/p\s*$/i.test(iapEntries[0].record.before)||/^\(?\s*\+\s*\)?$/.test(after)))
-                        parts.push('Intrapartum antibiotic prophylaxis was recorded, but its adequacy was not specified');
-                    else parts.push(`The IAP entry did not establish its adequacy (${maternalNarrativeQuotedEntries(iapEntries)})`);
-                }
-            }
-
-            const gdmEntries=maternalNarrativeEntries(data.gdmSource,'gdm');
-            const gdm=outputStatus(data,'gdmStatus');
-            if(gdm==='conflict'||gdm==='unknown') parts.push(maternalNarrativeUnresolved('Maternal gestational diabetes status',gdm,gdmEntries));
-            else {
-                const known=gdmEntries.filter(entry=>!entry.unresolved);
-                const tails=[...new Set(known.map(entry=>entry.tail).filter(Boolean))];
-                if(gdm==='positive'&&tails.length===1&&/^(?:under|on|with|treated\s+with|managed\s+with)\s+/i.test(tails[0])) {
-                    const regimen=tails[0].replace(/^(?:under|on|with|treated\s+with|managed\s+with)\s+/i,'');
-                    const split=regimen.split(/[,;]\s*(?=(?:no|without|consider|planned|insulin\s+(?:not|unknown|uncertain)|insulin\s*\())/i);
-                    if(split.length===1&&!/\b(?:consider|planned|not\s+given|unknown|uncertain)\b|[?±]/i.test(regimen))
-                        parts.push(`The mother had gestational diabetes managed with ${regimen}`);
-                    else {
-                        if(data.gdmTreatment?.length) parts.push(`The mother had gestational diabetes managed with ${joinOxford(data.gdmTreatment)}`);
-                        else parts.push('The mother had gestational diabetes');
-                        // Preserve a source dose even when another therapy on the
-                        // same line is negated, uncertain, or only being considered.
-                        if(split.length>1&&!/\b(?:consider|planned|not\s+given|unknown|uncertain)\b|[?±]/i.test(split[0])) {
-                            parts[parts.length-1]=`The mother had gestational diabetes managed with ${split[0]}`;
-                            split.slice(1).forEach(detail=>{
-                                const neg=detail.match(/^(?:no|without)\s+(.+)$/i);
-                                const plan=detail.match(/^consider\s+(.+)$/i);
-                                const notGiven=detail.match(/^(.+?)\s+not\s+(given|used|required|started)$/i);
-                                if(neg&&!/\b(?:if|unless|when|or|but)\b|[?±]/i.test(neg[1])) parts.push(`${neg[1].charAt(0).toUpperCase()+neg[1].slice(1)} ${/\band\b/i.test(neg[1])?'were':'was'} not used`);
-                                else if(plan) parts.push(`${plan[1].charAt(0).toUpperCase()+plan[1].slice(1)} was being considered`);
-                                else if(notGiven) parts.push(`${notGiven[1].charAt(0).toUpperCase()+notGiven[1].slice(1)} was not ${notGiven[2]}`);
-                                else parts.push(`The GDM management note stated “${detail}”`);
-                            });
-                        } else parts.push(`The GDM management note stated “${regimen}”`);
-                    }
-                } else {
-                    if(gdm==='negative'&&!tails.length&&!gdmEntries.some(entry=>entry.unresolved)) negativeHistory.push('gestational diabetes');
-                    else parts.push(gdm==='positive'?'The mother had gestational diabetes':'The maternal history was negative for gestational diabetes');
-                    tails.forEach(tail=>parts.push(`The GDM note stated “${tail}”`));
-                }
-                const unresolved=gdmEntries.filter(entry=>entry.unresolved);
-                if(unresolved.length) parts.push(`An additional GDM entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-            }
-
-            const preEntries=maternalNarrativeEntries(data.preEclampsiaSource,'preeclampsia');
-            const pre=outputStatus(data,'preEclampsiaStatus');
-            if(pre==='conflict'||pre==='unknown') parts.push(maternalNarrativeUnresolved('Maternal preeclampsia status',pre,preEntries));
-            else {
-                if(pre==='negative'&&!preEntries.some(entry=>entry.tail||entry.unresolved)) negativeHistory.push('preeclampsia');
-                else parts.push(pre==='positive'?'The mother had preeclampsia':'The maternal history was negative for preeclampsia');
-                preEntries.filter(entry=>!entry.unresolved&&entry.tail).forEach(entry=>parts.push(`The preeclampsia note stated “${entry.tail}”`));
-                const unresolved=preEntries.filter(entry=>entry.unresolved);
-                if(unresolved.length) parts.push(`An additional preeclampsia entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-            }
-            if(negativeHistory.length) parts.push(`The maternal history was negative for ${joinOxford(negativeHistory)}`);
-
-            const grouped={positive:[],negative:[]}, serologyDetails=[];
-            for(const key of ['HBsAg','HBeAg','HIV','RPR']) {
-                const status=data.serologyStatus?.[key]||(data.serology?.[key]==='+'?'positive':data.serology?.[key]==='-'?'negative':'unknown');
-                if(key==='HIV'&&status!=='positive')continue;
-                const entries=maternalNarrativeEntries(data.serologySource?.[key],key);
-                if(status==='positive'||status==='negative') {
-                    if(entries.every(entry=>!entry.tail&&!entry.unresolved)) grouped[status].push(key);
-                    else {
-                        serologyDetails.push(`Maternal ${key} was ${status}`);
-                        const tails=[...new Set(entries.filter(entry=>!entry.unresolved).map(entry=>entry.tail).filter(Boolean))];
-                        tails.forEach(tail=>serologyDetails.push(`The ${key} note stated “${tail}”`));
-                        const unresolved=entries.filter(entry=>entry.unresolved);
-                        if(unresolved.length) serologyDetails.push(`An additional maternal ${key} entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-                    }
-                } else serologyDetails.push(maternalNarrativeUnresolved(`Maternal ${key}`,status,entries));
-            }
-            const serologyClauses=['positive','negative'].filter(status=>grouped[status].length).map(status=>`${status} for ${joinOxford(grouped[status])}`);
-            if(serologyClauses.length) parts.push(`Maternal serology was ${serologyClauses.join(' and ')}`);
-            parts.push(...serologyDetails);
-            return parts.map(maternalNarrativeSentence).filter(Boolean).join(' ');
-        }
-
-        function narrativePerinatalText(data) {
-            const parts=[], negative=[];
-            const promEntries=maternalNarrativeEntries(data.prom?.source,'prom');
-            const prom=data.prom?.status||'unknown';
-            if(prom==='positive') {
-                parts.push(data.prom.duration!==null&&data.prom.duration!==undefined?`The perinatal history included PROM for ${data.prom.duration} hours`:'Premature rupture of membranes (PROM) was documented');
-                const duration=/^\s*(?:for\s+|duration\s*[:=]?\s*|lasting\s+)?(?:\d+(?:\.\d+)?|\.\d+)\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|min)(?![A-Za-z])(?:\s*(?:and|,|\+)?\s*(?:\d+(?:\.\d+)?|\.\d+)\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|min)(?![A-Za-z]))*/i;
-                promEntries.filter(entry=>!entry.unresolved).forEach(entry=>{
-                    const detail=maternalNarrativeClean(entry.tail.replace(duration,''));
-                    if(detail) parts.push(maternalNarrativeTailSentence(detail));
-                });
-                const unresolved=promEntries.filter(entry=>entry.unresolved);
-                if(unresolved.length) parts.push(`An additional PROM entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-            } else if(prom==='negative') {
-                negative.push('premature rupture of membranes (PROM)');
-                promEntries.filter(entry=>!entry.unresolved&&entry.tail).forEach(entry=>parts.push(maternalNarrativeTailSentence(entry.tail)));
-                const unresolved=promEntries.filter(entry=>entry.unresolved);
-                if(unresolved.length) parts.push(`An additional PROM entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-            } else parts.push(maternalNarrativeUnresolved('PROM status',prom,promEntries));
-
-            for(const [key,label,statusKey,sourceKey] of [
-                ['mas','meconium aspiration syndrome (MAS)','masStatus','masSource'],
-                ['fetalDistress','fetal distress','fetalDistressStatus','fetalDistressSource'],
-            ]) {
-                const status=outputStatus(data,statusKey);
-                const entries=maternalNarrativeEntries(data[sourceKey],key,'all');
-                const alreadyInDelivery=key==='fetalDistress'&&status==='positive'&&/\bfetal\s+distress\b/i.test(data.csReason||'')&&entries.every(entry=>!entry.tail&&!entry.unresolved);
-                if(alreadyInDelivery) continue;
-                if(status==='positive'||status==='negative') {
-                    if(status==='negative') negative.push(label);
-                    else parts.push(`${label.charAt(0).toUpperCase()+label.slice(1)} was documented`);
-                    entries.filter(entry=>!entry.unresolved&&entry.tail).forEach(entry=>parts.push(`The ${key==='mas'?'MAS':'fetal distress'} note stated “${entry.tail}”`));
-                    const unresolved=entries.filter(entry=>entry.unresolved);
-                    if(unresolved.length) parts.push(`An additional ${key==='mas'?'MAS':'fetal distress'} entry stated ${maternalNarrativeQuotedEntries(unresolved)}`);
-                } else parts.push(maternalNarrativeUnresolved(`${label.charAt(0).toUpperCase()+label.slice(1)} status`,status,entries));
-            }
-            if(negative.length) parts.push(`There was no ${negative.length===1?negative[0]:negative.length===2?negative.join(' or '):negative.slice(0,-1).join(', ')+', or '+negative.at(-1)}`);
-            return parts.map(maternalNarrativeSentence).filter(Boolean).join(' ');
-        }
-
-        // Admission notes describe birth and the initial assessment. Later
-        // records stay available for review and for the separate discharge
-        // renderer. This helper has no transfer or encounter state machine.
         function getNarrativeAdmissionScope(data) {
             const source=String(data.sourceText||'').replace(/\r\n?/g,'\n');
             const entries=[], excluded=[], assessment=[];
@@ -1767,10 +1288,6 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             }
             return {entries,assessmentSource:assessment.join('\n'),excluded};
         }
-
-        function narrativeRecordGroups(entries) {
-            return Object.fromEntries(CLINICAL_SOURCE_GROUPS.map(group=>[group.key,entries.filter(item=>item.kind===group.key).map(item=>item.line)]));
-        }
         function admissionPEContext(data,peFindings,scope) {
             const assessmentData={...data,...parseRecordedAssessments(scope.assessmentSource)};
             const deferred=peFindings.filter(finding=>{
@@ -1782,145 +1299,199 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             const conflicts=collectPEConflicts(data,deferred);
             return {assessmentData,findings:peFindings.filter(finding=>!deferred.includes(finding)),deferred,conflicts};
         }
-        function renderNarrativeRecords(entries) {
-            return entries.map(item=>narrativeClinicalRecord(item.line,item.kind)).filter(Boolean).join(' ');
-        }
-        function narrativeBackground(data) {
-            const parts=[narrativeBirthText(data)];
-            if(/^\d+\s*(?:->|to)\s*\d+$/.test(String(data.apgar||'')))parts.push(outputApgarText(data));
-            return parts.filter(Boolean).join(' ');
-        }
-        function narrativeMaternalParagraph(data,entries) {
-            const maternalSources=[data.gbsSource,data.iapSource].filter(Boolean).map(normalizeAssessmentText).join('\n');
-            const prenatal=renderNarrativeRecords(entries.filter(item=>/^prenatal/.test(item.kind)&&!maternalSources.includes(normalizeAssessmentText(item.line))));
-            return [narrativeMaternalText(data),narrativePerinatalText(data),prenatal].filter(Boolean).join(' ');
-        }
-        function generateNarrativeReview(data,peFindings,kind='discharge') {
-            // Admission and discharge both use the original concise templates.
-            // Source conflicts remain in the copied finding text, not a checklist.
-            return '';
-        }
-        function updateNarrativeReviews(data,peFindings=[]) {
-            for(const [kind,element] of [['summary',DOM.summaryReview],['discharge',DOM.dischargeReview]]){
-                element.innerHTML=data?generateNarrativeReview(data,peFindings,kind):'';
-                element.classList.toggle('hidden',!element.innerHTML);
+        function templateInitialData(data,manual=[]) {
+            const scope=getNarrativeAdmissionScope(data), context=admissionPEContext(data,manual,scope);
+            const output={...context.assessmentData,templateInitialScope:scope,templateManualPE:context.findings};
+            for(const [pattern,key] of [[/\bvac+uum(?:[\s-]*(?:assist(?:ed|ance)?|assited))?\b/gi,'vacuumMatch'],[/\bforceps?(?:[\s-]*(?:assisted|assited))?\b/gi,'forcepsMatch'],[/\bpainless(?:\s+labor)?\b/gi,'painless']]){
+                const observations=[...String(data.deliveryLine||'').matchAll(pattern)].map(match=>{
+                    const before=data.deliveryLine.slice(0,match.index).split(/[;,\n]/).at(-1),after=data.deliveryLine.slice(match.index+match[0].length);
+                    const result=coreResult({before,after});
+                    return result.status==='negative'||result.status==='conflict'||/\bor\b|或|[?±]/i.test(before+' '+after)||result.status==='unknown'&&(result.explicit||/\b(?:possible|suspected|considered|if)\s*$/i.test(before));
+                });
+                if(observations.some(Boolean))output[key]=false;
             }
+            return output;
         }
-
-        // The original DDH sentences carry positive findings once. Ordinary
-        // negative siblings stay compact; genuine qualifiers remain as supplied.
-        function ddhTemplateContext(data,peFindings) {
-            const groups=data.recordedAssessment||{}, notes=[];
+        function templatePEState(data,name) {
+            const literal=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+            const result=parseAssessmentGroup(String(data.sourcePE||''),[{name,re:'\\b'+literal+'\\b'}]).records[0];
+            return result?.state;
+        }
+        function templateProphylaxis(data) {
+            const values=templateClinicalValues(data,/\b(?:prophylaxis|HBIG|HBV|hepatitis\s*B|vaccin(?:e|ation)s?|Vitamin\s*K1?|tetracycline|ophthalmic\s+ointment)\b/i,['treatment']);
+            const text=values.join('\n'), all=values.some(value=>/\b(?:routine|all)\s+prophylaxis\b/i.test(value));
+            const routine=[['HBV vaccine (IM)',/\b(?:HBV|hepatitis\s*B|vaccin(?:e|ation)s?)\b/i],['tetracycline ophthalmic ointment (topical)',/\b(?:tetracycline|ophthalmic\s+ointment)\b/i],['Vitamin K1 (IM)',/\bVitamin\s*K1?\b/i]].filter(([,pattern])=>!all&&!pattern.test(text)).map(([label])=>label);
+            const needsHBIG=(data.serology.HBsAg==='+'||data.serology.HBeAg==='+')&&!all&&!/\bHBIG\b/i.test(text);
+            const original=routine.length?`Upon admission, the infant received routine prophylaxis including ${joinOxford(routine)}${needsHBIG?`, plus ${hlSource('HBIG (IM)')}`:''}.`:needsHBIG?`Upon admission, the infant received ${hlSource('HBIG (IM)')}.`:'';
+            const positiveHiv=(data.serologyStatus?.HIV==='positive'||templateInfantHIV(data));
+            const hivCare=positiveHiv?templateClinicalValues(data,/\b(?:HIV|zidovudine)\b/i,['treatment']).filter(value=>!values.includes(value)):[];
+            return [original,...values.map(templateCareSentence),...hivCare.map(templateCareSentence)].filter(Boolean).join(' ');
+        }
+        function templateInfantHIV(data) {
+            const lines=coreRows(data.sourceText||'','all').filter(row=>row.subject==='infant').map(row=>row.text);
+            return parseCoreStatus(lines.join('\n'),'HIV','all').status==='positive';
+        }
+        function templateResuscitation(data,hasRD) {
+            const specs=[
+                ['Free flow oxygen','free\\s*flow\\s*oxygen|FFO',hasRD?'+':'-'],
+                ['Manual positive pressure ventilation','(?:manual\\s+)?positive\\s+pressure\\s+ventilation|PPV','-'],
+                ['Neopuff (setting)','neopuff','-'],['Intubation','intubation','-'],
+                ['Chest compression','chest\\s+compressions?','-'],['UVC','UVC','-'],['Epinephrine','epinephrine','-'],['NS challenge','NS\\s+challenge','-'],
+            ];
+            const source=getClinicalSourceRecords(data).resuscitation.join('\n');
+            const pattern=new RegExp(specs.map(([,alias])=>'\\b(?:'+alias+')\\b').join('|'),'gi');
+            const matches=[...source.matchAll(pattern)], supplied=new Map();
+            for(let i=0;i<matches.length;i++){
+                const match=matches[i], index=specs.findIndex(([,alias])=>new RegExp('^(?:'+alias+')$','i').test(match[0]));
+                const before=source.slice(0,match.index).split(/[,;\n]/).at(-1), after=source.slice(match.index+match[0].length,matches[i+1]?.index??source.length);
+                const result=coreResult({before,after}), tail=templateValue(result.tail);
+                const status=result.explicit?templateStatus(result.status):/\b(?:planned|consider|pending|not|unknown|declined|refused)\b|\?/i.test(before+' '+after)?'?':'+';
+                const value=`${specs[index][0]}(${hlSource(status)})${tail?' '+hlSource(tail):''}`;
+                if(!supplied.has(index))supplied.set(index,[]);
+                supplied.get(index).push(value);
+            }
+            if(source.trim()&&!matches.length)return hlSource(source.replace(/^resuscitation\s*[:：]\s*/i,''));
+            return specs.map(([label,,value],index)=>supplied.has(index)?[...new Set(supplied.get(index))].join('; '):`${label}(${index===0?hlSource(value):value})`).map((value,index)=>index===3?'\n'+value:value).join(', ');
+        }
+        function templateDDH(data,manual=[]) {
+            const assessment=data.recordedAssessment||{}, values={risk:[],compression:[],hip:[]}, qualifiers=[];
             const completeNegative=key=>{
-                const group=groups[key];
+                const group=assessment[key];
                 return !!group?.source&&!group.requiresReview&&(group.groupState==='negative'||group.records.length===ASSESSMENT_FIELDS[key].length&&group.records.every(record=>record.state==='negative'));
             };
-            const split=value=>{
-                const pieces=[];
-                for(const piece of String(value||'').split(/[,;\n]\s*(?!or\b|或)/i)){
-                    if(!piece.trim())continue;
-                    if(pieces.length&&(/\bor\s*$|或\s*$/i.test(pieces.at(-1))||/^\s*(?:or\b|或)/i.test(piece)))pieces[pieces.length-1]+=' '+piece.trim();
-                    else pieces.push(piece.trim());
-                }
-                return pieces;
-            };
-            const hasHip=value=>ASSESSMENT_FIELDS.hip.some(field=>new RegExp(field.re,'i').test(value));
-            const mixedHip=value=>hasHip(value)&&/\band\b/i.test(value)&&value.split(/\band\b/i).some(piece=>piece.trim()&&!hasHip(piece));
-            const separateHip=value=>hasHip(value)&&!mixedHip(value);
-            const sourcePieces=split(data.sourcePE), hipPieces=sourcePieces.filter(separateHip);
-            const sourcePE=hipPieces.length?String(data.sourcePE||'').split('\n').map(line=>hasHip(line)?split(line).filter(piece=>!separateHip(piece)).join('; '):line).join('\n'):data.sourcePE;
-            const labels={risk:'DDH risk assessment',compression:'Intrauterine compression signs',hip:'Hip examination'};
-            const values={};
+            const clinical=new Set(Object.values(getClinicalSourceRecords(data)).flat());
+            const split=value=>String(value||'').split(/[,;\n]\s*(?!or\b|或)/i).filter(Boolean);
             for(const key of ['risk','compression','hip']){
-                const group=groups[key], positive=[];
+                const group=assessment[key];
                 if(!group){values[key]=[...(data[{risk:'ddhRisk',compression:'compressionSigns',hip:'ddhPe'}[key]]||[])];continue;}
-                const source=key==='hip'?split(group.source).filter(hasHip).join('; ')||group.source:group.source;
-                const details=[];
-                for(const piece of split(source)){
-                    const parsed=parseAssessmentGroup(piece,ASSESSMENT_FIELDS[key]);
-                    const actual=parsed.records.filter(record=>group.records.some(full=>full.name===record.name&&full.state==='positive')&&record.state==='positive');
-                    const unresolved=parsed.records.some(record=>record.state==='unknown'||record.state==='conflict'||['unknown','conflict'].includes(group.records.find(full=>full.name===record.name)?.state));
-                    // A compound PE observation remains general PE; a murmur
-                    // beside a hip sign must not become a musculoskeletal finding.
-                    if(key==='hip'&&mixedHip(piece)&&String(data.sourcePE||'').includes(piece)){
-                        positive.push(...actual.map(record=>record.positive||record.name));continue;
+                const fields=ASSESSMENT_FIELDS[key];
+                let source=String(key==='hip'?(group.renderSource||group.source):group.source).split('\n').filter(line=>!clinical.has(line.trim())).join('\n');
+                if(key==='hip')source=templateObservationParts(source).filter(part=>fields.some(field=>new RegExp(field.re,'i').test(part))).join('; ');
+                values[key]=group.records.filter(record=>record.state==='positive').map(record=>record.positive||record.name);
+                // Keep true uncertainty in the existing finding sentence. Ordinary
+                // negative siblings do not become a new screening catalog.
+                if(group.requiresReview){
+                    for(const part of split(source)){
+                        const parsed=parseAssessmentGroup(part,fields);
+                        const affected=parsed.records.filter(record=>['unknown','conflict'].includes(group.records.find(item=>item.name===record.name)?.state));
+                        let residue=part;
+                        for(const field of fields)residue=residue.replace(new RegExp(field.re,'gi'),'');
+                        residue=residue.replace(/\(\s*[+-]\s*\)|\b(?:and|positive|negative)\b|[\s,;:.]/gi,'');
+                        const extra=parsed.requiresReview&&parsed.records.length&&!!residue;
+                        if(affected.length||extra){
+                            if(key==='hip'&&/\b(?:murmur|cyanosis|hypotonia|jaundice|respiratory|undescended|hernia|hydrocele|fever)\b/i.test(part))continue;
+                            const named=parsed.records.map(record=>record.name);
+                            values[key]=values[key].filter(value=>!fields.some(field=>named.includes(field.name)&&(field.positive||field.name)===value));
+                            if(!affected.length&&parsed.records.every(record=>record.state==='positive')){
+                                for(const record of parsed.records){
+                                    const field=fields.find(item=>item.name===record.name);
+                                    const detail=templateValue(part.replace(new RegExp(field.re,'i'),'').replace(/\(\s*\+\s*\)|\bpositive\b/gi,''));
+                                    values[key].push((field.positive||field.name)+(detail?' ('+detail+')':''));
+                                }
+                            }else qualifiers.push({key,text:part.trim()});
+                        }
                     }
-                    if(unresolved||parsed.groupState==='unknown'||parsed.groupState==='positive'||!parsed.records.length&&!parsed.groupState&&piece){details.push(piece);continue;}
-                    if(actual.length){
-                        if(parsed.requiresReview)positive.push(piece);
-                        else positive.push(...actual.map(record=>record.positive||record.name));
-                    }
+                    if(!group.records.length&&source&&!/^(?:negative|none|absent|\(?-\)?)\s*[.]?$/i.test(source))qualifiers.push({key,text:source});
                 }
-                values[key]=[...new Set(positive)];
-                if(details.length)notes.push(`${labels[key]}: ${hlSource(details.join('; '))}.`);
             }
-            const suspect=peFindings.some(finding=>finding.includes('DDH suspect'));
+            const suspect=manual.some(finding=>finding.includes('DDH suspect'));
             if(suspect&&!values.hip.length){
-                if(completeNegative('hip'))notes.push(hlSource('DDH source/manual conflict: suspected DDH was selected, while the supplied hip examination was negative.'));
+                if(completeNegative('hip'))qualifiers.push({key:'hip',text:'suspected DDH (manual selection; hip examination negative)'});
                 else values.hip.push('suspected DDH on examination');
             }
-            return {...values,sourcePE,notes,hipNegative:completeNegative('hip'),allNegative:!suspect&&['risk','compression','hip'].every(completeNegative)};
+            return {...values,qualifiers,hipNegative:completeNegative('hip'),allNegative:!suspect&&['risk','compression','hip'].every(completeNegative)};
         }
-        function admissionTemplatePE(data,peFindings,records) {
-            const ddh=ddhTemplateContext(data,peFindings);
-            const clinicalLines=new Set(Object.values(records).flat());
-            const source=String(ddh.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
-            const normal=/^(?:(?:physical\s+examination\s+revealed\s+)?no\s+gross\s+anomalies|(?:grossly\s+)?normal(?:\s+(?:PE|physical\s+examination))?)[.]?$/i.test(source);
-            const assessmentData={...data,sourcePE:normal?'':source,recordedAssessment:undefined};
-            const conflicts=collectPEConflicts(data,peFindings);
-            const selected=peFindings.filter(finding=>!finding.includes('DDH suspect')&&!conflicts.includes(finding)&&!alreadyRecordedPE(data,finding));
-            const observations=[], respiratory=selected.find(finding=>finding.includes('Respiratory distress'));
-            if(respiratory){
-                const signs=[];
-                if(respiratory.includes('nasal flaring'))signs.push('nasal flaring');
-                if(respiratory.includes('retraction'))signs.push('retractions');
-                observations.push(`the infant exhibited ${hlSource('respiratory distress'+(signs.length?' with '+signs.join(' and '):''))}`);
+        function templateObservationParts(source) {
+            const known='(?:heart\\s+murmur|(?:(?:systolic|diastolic)\\s+)?murmur|respiratory\\s+distress|cyanosis|hypotonia|jaundice|fever|caput\\s+succedaneum|cephalohematoma|undescended\\s+testis|inguinal\\s+hernia|hydrocele|Barlow(?:[\'’]s)?|Ortolani(?:[\'’]s)?|Galeazzi|limitation\\s+of\\s+(?:hip\\s+)?abduction|nasal\\s+flaring|(?:subcostal\\s+)?retractions?)';
+            const controlNames=Array.from(document.querySelectorAll('input[name="peFinding"]')).map(input=>input.value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+'));
+            const start='(?:(?:no|not|possible|suspected|left|right|bilateral|lt|rt|grade\\s+\\d/\\d)\\s+)*(?:'+known+'|'+controlNames.join('|')+')';
+            return String(source||'').split(/;|\n/).flatMap(line=>{
+                if(/\bor\b|或/i.test(line))return [line.trim()];
+                return line.split(new RegExp('(?:,\\s*|\\s+and\\s+)(?='+start+')','i')).map(part=>part.trim());
+            }).filter(Boolean);
+        }
+        function templatePE(data,manual=[]) {
+            const ddh=templateDDH(data,manual), clinical=new Set(Object.values(getClinicalSourceRecords(data)).flat());
+            const source=String(data.sourcePE||'').split('\n').filter(line=>!clinical.has(line.trim())).join('\n');
+            const normal=/^(?:(?:physical\s+examination\s+revealed\s+)?no\s+gross\s+anomalies|(?:grossly\s+)?normal(?:\s+(?:PE|physical\s+examination))?)[.]?$/i.test(source.trim());
+            const conflicts=collectPEConflicts(data,manual), parts=[];
+            const normalizedFinding=value=>normalizeAssessmentText(value).replace(/\s+/g,' ').trim().toLowerCase();
+            const rawParts=templateObservationParts(source);
+            const names=[...Array.from(document.querySelectorAll('input[name="peFinding"]')).map(input=>input.value),'Respiratory distress','Caput succedaneum','Undescended testis','Inguinal hernia','murmur'];
+            const literal=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+            const time=value=>value.match(/\b(?:at\s+birth|(?:at|on)\s+(?:BR\s+)?admission|on\s+day\s+\d+(?:\s+of\s+life)?|at\s+\d+(?:\.\d+)?\s*(?:hours?|days?)\s+of\s+(?:age|life))\b/i)?.[0]?.toLowerCase()||'';
+            for(const part of rawParts){
+                const hip=parseAssessmentGroup(part,ASSESSMENT_FIELDS.hip);
+                const containsGeneral=/\b(?:murmur|cyanosis|hypotonia|jaundice|respiratory|undescended|hernia|hydrocele|fever)\b/i.test(part);
+                if(hip.records.length&&!containsGeneral)continue;
+                if(normal)continue;
+                const uncertainty=/\b(?:or|unknown|uncertain|equivocal|possible|suspected)\b|[?±]|或/i.test(part);
+                const conflict=conflicts.some(finding=>normalizedFinding(part).includes(normalizedFinding(finding.replace(/\s*\([^)]*\)/g,''))));
+                const named=names.find(name=>new RegExp('\\b'+literal(name)+'\\b','i').test(part));
+                const matching=named?rawParts.filter(other=>new RegExp('\\b'+literal(named)+'\\b','i').test(other)&&(!time(part)||!time(other)||time(part)===time(other))):[];
+                const states=named?matching.map(other=>parseAssessmentGroup(other,[{name:named,re:'\\b'+literal(named)+'\\b'}]).records[0]?.state).filter(Boolean):[];
+                const sourceConflict=states.includes('conflict')||states.includes('positive')&&states.includes('negative');
+                const positive=/\(\s*\+\s*\)|\bpositive\b/i.test(part), negative=/\(\s*-\s*\)|\bnegative\b|^\s*(?:no|without)\b/i.test(part);
+                const qualified=/\b(?:at\s+birth|(?:at|on)\s+(?:BR\s+)?admission|on\s+day\s+\d|at\s+\d+\s*(?:hours?|days?)|resolved|persisted|left|right|bilateral)\b/i.test(part);
+                if(negative&&!positive&&!uncertainty&&!conflict&&!sourceConflict&&!qualified)continue;
+                let value=templateValue(part);
+                if(!uncertainty&&!negative&&!conflict&&!sourceConflict)value=value.replace(/\s*\(\s*\+\s*\)/g,'');
+                if(conflict)value+=' (manual selection positive)';
+                else if(sourceConflict)value+=' (conflicting findings)';
+                parts.push(value);
             }
+            const selected=manual.filter(finding=>!finding.includes('DDH suspect')&&!conflicts.includes(finding)).filter(finding=>{
+                const name=finding.replace(/\s*\([^)]*\)/g,'').trim();
+                if(!parts.some(part=>normalizedFinding(part).includes(normalizedFinding(name))))return true;
+                const side=finding.match(/\((lt|rt|bilateral)\)/i)?.[1];
+                return !!side&&!new RegExp(side==='lt'?'\\b(?:lt|left)\\b':side==='rt'?'\\b(?:rt|right)\\b':'\\b(?:bilateral|both)\\b','i').test(source);
+            });
+            return {ddh,selected,phrase:parts.join(', '),parts,rawParts,normal,sourcePresent:!!source.trim(),conflicts};
+        }
+        function templateAdmissionPE(data,manual=[]) {
+            const {ddh,selected,phrase,sourcePresent,normal,parts:sourceParts}=templatePE(data,manual), parts=[];
+            const respiratory=selected.find(finding=>finding.includes('Respiratory distress'));
+            if(respiratory){const signs=[];if(respiratory.includes('nasal flaring'))signs.push('nasal flaring');if(respiratory.includes('retraction'))signs.push('retractions');parts.push(`the infant exhibited ${hlSource('respiratory distress'+(signs.length?' with '+signs.join(' and '):''))}`);}
             const other=selected.filter(finding=>!finding.includes('Respiratory distress'));
-            if(other.length)observations.push(`${joinOxford(other.map(hlSource))} ${other.length===1?'was':'were'} noted`);
-            const musculoskeletal=[...ddh.hip,...ddh.compression];
-            if(musculoskeletal.length)observations.push(`musculoskeletal examination was notable for ${musculoskeletal.map(hlSource).join(', ')}`);
-            if(ddh.risk.length){
-                const risks=ddh.risk.map(hlSource).join(', ');
-                observations.push(!musculoskeletal.length&&ddh.hipNegative?`DDH screening noted risk factors including ${risks}, but physical signs were negative`:`DDH risk factors including ${risks} were identified`);
-            }
-            const manual=observations.length?`On physical examination, ${observations.join('. ')}.`:'';
-            let text=!source||normal?manual||(normal?'Physical examination revealed no gross anomalies.':''):[narrativePE(assessmentData,conflicts,records),manual].filter(Boolean).join(' ');
-            if(ddh.allNegative)text=[text,'Screening for DDH risk factors and physical signs was negative.'].filter(Boolean).join(' ');
-            return [text,...ddh.notes].filter(Boolean).join(' ');
+            other.unshift(...sourceParts);
+            if(other.length)parts.push(`${joinOxford(other.map(hlSource))} ${other.length===1?'was':'were'} noted`);
+            const msk=[...ddh.hip,...ddh.compression,...ddh.qualifiers.filter(item=>item.key!=='risk').map(item=>item.text)];
+            if(msk.length)parts.push(`musculoskeletal examination was notable for ${msk.map(hlSource).join(', ')}`);
+            if(ddh.risk.length){const risk=ddh.risk.map(hlSource).join(', ');parts.push(!msk.length&&ddh.hipNegative?`DDH screening noted risk factors including ${risk}, but physical signs were negative`:`DDH risk factors including ${risk} were identified`);}
+            const uncertainRisk=ddh.qualifiers.filter(item=>item.key==='risk').map(item=>item.text);
+            if(uncertainRisk.length)parts.push(`DDH screening noted ${hlSource(uncertainRisk.join('; '))}`);
+            let text=parts.length?`On physical examination, ${parts.join('. ')}.`:!sourcePresent||normal?'Physical examination revealed no gross anomalies.':'';
+            if(ddh.allNegative)text+=' Screening for DDH risk factors and physical signs was negative.';
+            return text;
+        }
+        function templateDischargeDDH(data,manual=[]) {
+            const ddh=templateDDH(data,manual), risks=[...ddh.risk,...ddh.compression], riskText=joinOxford(risks.map(hlSource)), peText=joinOxford(ddh.hip.map(hlSource));
+            const pending=templateClinicalValues(data,/\b(?:DDH|hip|orthopedic)\b/i,['disposition','treatment','course','education']);
+            const notes=ddh.qualifiers.map(item=>item.text), parts=[];
+            if(pending.length){
+                if(risks.length)parts.push(`DDH risk factors including ${riskText} were identified.`);
+                if(ddh.hip.length)parts.push(`Musculoskeletal examination was notable for ${peText}.`);
+                parts.push(...pending.map(templateCareSentence));
+            }else if(risks.length&&ddh.hip.length)parts.push(`Due to identified DDH risk factors including ${riskText}, as well as ${peText}, an ${hlSource('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
+            else if(ddh.hip.length)parts.push(`Due to ${peText} on physical examination, an ${hlSource('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
+            else if(risks.length&&ddh.hipNegative&&!notes.length)parts.push(`Due to identified DDH risk factors including ${riskText}, DDH screening was performed; however, ${hlSource('physical examination of the hips was unremarkable')}.`);
+            else if(risks.length)parts.push(`DDH risk factors including ${riskText} were identified.`);
+            if(notes.length)parts.push(`DDH screening noted ${hlSource(notes.join('; '))}.`);
+            return parts.join(' ');
+        }
+        function templateOverride(data,pattern,fallback,keys) {
+            const values=templateClinicalValues(data,pattern,keys);
+            return values.length?values.map(templateCareSentence).join(' '):fallback;
         }
 
         function generateSummary(data, peFindings) {
-            data=hivOutputData(data);
-            const scope=getNarrativeAdmissionScope(data);
-            const peContext=admissionPEContext(data,peFindings,scope);
-            const initialPE=peContext.findings.filter(finding=>!collectPEConflicts(peContext.assessmentData,peContext.findings).includes(finding));
-            const hasRD=initialPE.some(finding=>finding.includes('Respiratory distress'));
-            const records=getClinicalSourceRecords(data), entries=narrativeClinicalEntries(data,records);
-            const uncompleted=/\b(?:planned|consider|declined|refused|deferred|withheld|cancelled|canceled|not\s+(?:yet\s+)?(?:done|performed|obtained|given|administered|started|transferred|admitted))\b/i;
-            const deliveryData={...data}, deliveryNotes=[];
-            for(const [pattern,property,label] of [
-                [/\bvac+uum(?:[\s-]*(?:assist(?:ed|ance)?|assited))?\b/gi,'vacuumMatch','Vacuum assistance'],
-                [/\bforceps?(?:[\s-]*(?:assisted|assited))?\b/gi,'forcepsMatch','Forceps assistance'],
-                [/\bpainless(?:\s+labor)?\b/gi,'painless','Painless labor'],
-            ]){
-                const observations=[...String(data.deliveryLine||'').matchAll(pattern)].map(match=>{
-                    const before=data.deliveryLine.slice(0,match.index).split(/[;,\n]/).at(-1);
-                    const after=data.deliveryLine.slice(match.index+match[0].length);
-                    return {...coreResult({before,after}),qualified:/\b(?:or|possible|suspected|considered|if)\s*$/i.test(before)};
-                });
-                const negative=observations.some(result=>result.status==='negative');
-                const positive=observations.some(result=>result.status==='positive');
-                const unresolved=observations.some(result=>result.status==='conflict'||result.status==='unknown'&&(result.explicit||result.qualified||/\bor\b|或/i.test(result.tail)));
-                if(negative||unresolved){
-                    deliveryData[property]=false;
-                    deliveryNotes.push(negative&&!positive&&!unresolved?`${label} was not used`:`The delivery assistance entry was unresolved (“${maternalNarrativeClean(data.deliveryLine).replace(/\n/g,'; ')}”)`);
-                }
-            }
+            data=templateInitialData(hivOutputData(data),peFindings);
+            peFindings=data.templateManualPE;
+            const hasRD=peFindings.some(f=>f.includes('Respiratory distress')&&!collectPEConflicts(data,peFindings).includes(f));
             let dd=[];
-            if(deliveryData.vacuumMatch&&!/\bvac+uum\b/i.test(data.csReason||''))dd.push(hlSource('vacuum assistance'));
-            if(deliveryData.forcepsMatch&&!/\bforceps?\b/i.test(data.csReason||''))dd.push(hlSource('forceps assistance'));
-            if(deliveryData.painless&&!/\bpainless\b/i.test(data.csReason||''))dd.push(hlSource('painless labor'));
+            if(data.vacuumMatch) dd.push(hlSource('vacuum assistance'));
+            if(data.forcepsMatch) dd.push(hlSource('forceps assistance'));
+            if(data.painless) dd.push(hlSource('painless labor'));
             const ddStr=dd.length>0?` with ${dd.join(' and ')}`:'';
             let dStr=`${hlSource(data.csPrefix + data.deliveryMode)}`;
             if(data.deliveryMode==='C/S'&&data.csReason) dStr+=` due to ${hlSource(data.csReason)}`;
@@ -1933,19 +1504,24 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 else if(t.includes('medication'))t=`GDM under ${hlSource('medication')}`;
                 else if(t.includes('insulin'))t=`GDM under ${hlSource('insulin')}`;
                 else t=hlSource('GDM');
+                const detail=templateCoreTail(data,'gdm');
+                if(detail&&!/^(?:under |on |with )?(?:diet(?: control)?|insulin|medication|OHA)[.]?$/i.test(detail))t=hlSource('GDM ('+detail+')');
                 matPos.push(t);
             }
-            if(data.gbsStatus==='positive') {
+            if(data.isGbsPositive) {
                 let gbsText='GBS colonization';
-                if(data.iapStatus==='adequate')
+                if(data.gbs.includes('s/p complete')||data.gbs.includes('complete IAP')&&!data.gbs.includes('incomplete'))
                     gbsText=hlSource('GBS colonization with completed intrapartum antibiotic prophylaxis');
-                else if(data.iapStatus==='inadequate')
+                else if(data.gbs.includes('incomplete'))
                     gbsText=hlSource('GBS colonization without adequate intrapartum antibiotic prophylaxis');
                 else gbsText=hlSource('GBS colonization');
+                const iapDetail=templateIAPDetail(data);
+                if(/\bIAP\s+(?:pending|unknown|uncertain|not\s+documented)\b/i.test(iapDetail))gbsText=hlSource('GBS colonization with uncertain IAP completion');
+                if(iapDetail)gbsText+=' ('+hlSource(iapDetail)+')';
                 matPos.push(gbsText);
             }
             if(data.preEclampsia) matPos.push(hlSource('Pre-eclampsia'));
-            const posSero=Object.entries(data.serology).filter(([key,v])=>v==='+'&&(key!=='HIV'||!data.serologyStatus?.HIV||data.serologyStatus.HIV==='positive')).map(([k])=>k);
+            const posSero=Object.entries(data.serology).filter(([,v])=>v==='+').map(([k])=>k);
             const negSero=Object.entries(data.serology).filter(([key,v])=>key!=='HIV'&&v==='-').map(([k])=>k);
             if(posSero.length>0) matPos.push(`positive serology for ${hlSource(posSero.join(', '))}`);
             let matNeg=[];
@@ -1956,37 +1532,17 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             let matStr=`Maternal blood type is ${hlSource(data.bloodGroup)}.`;
             if(matPos.length>0){matStr+=` Maternal history was significant for ${matPos.join(', ')}.`;if(matNeg.length>0)matStr+=` Screening for ${matNeg.join(', ')} was negative.`;}
             else if(matNeg.length>0) matStr+=` Maternal screening was negative for ${matNeg.join(', ')}.`;
-            const maternalKeys=[['gbsSource','gbs'],['iapSource','iap'],['gdmSource','gdm'],['preEclampsiaSource','preeclampsia']];
-            const maternalDetail=maternalKeys.some(([sourceKey,key])=>maternalNarrativeEntries(data[sourceKey],key).some(entry=>entry.tail||entry.unresolved))
-                ||['gbsStatus','gdmStatus','preEclampsiaStatus','bloodGroupStatus'].some(key=>data[key]==='conflict')
-                ||['HBsAg','HBeAg','HIV','RPR'].filter(key=>key!=='HIV'||data.serologyStatus?.HIV==='positive').some(key=>maternalNarrativeEntries(data.serologySource?.[key],key).some(entry=>entry.tail||entry.unresolved));
-            if(maternalDetail)matStr=narrativeMaternalText(data);
+            const promState=data.prom?.status, masState=data.masStatus;
+            const promT=promState==='positive'?(data.prom.duration!==null?`PROM for ${hlSource(data.prom.duration)} hours`:'PROM'):null;
             let periStr='';
-            const promStatus=data.prom?.status, masStatus=data.masStatus;
-            const promT=promStatus==='positive'?(data.prom.duration!==null?`PROM for ${hlSource(data.prom.duration)} hours`:'PROM'):null;
-            const simpleProm=/^PROM\s*[:=]?\s*(?:\(\s*[+-]\s*\)|positive|negative)(?:\s*(?:for\s+)?(?:\d+(?:\.\d+)?|\.\d+)\s*(?:hours?|hrs?|h))?\s*[.]?$/i.test(normalizeAssessmentText(data.prom?.source||'').trim());
-            const complexPerinatal=data.prom?.source&&!simpleProm
-                ||maternalNarrativeEntries(data.masSource,'mas','all').some(entry=>entry.tail||entry.unresolved)
-                ||maternalNarrativeEntries(data.fetalDistressSource,'fetalDistress','all').some(entry=>entry.tail||entry.unresolved)
-                ||[promStatus,masStatus,data.fetalDistressStatus].includes('conflict');
-            if(complexPerinatal)periStr=narrativePerinatalText(data);
-            else if(promStatus==='negative'&&masStatus==='negative')periStr=`There was ${hlSource('no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS)')}.`;
-            else if(promStatus==='positive'&&masStatus==='negative')periStr=`${promT} was noted, but ${hlSource('no MAS')} was observed.`;
-            else if(promStatus==='negative'&&masStatus==='positive')periStr=`There was ${hlSource('no PROM')}, but MAS was noted.`;
-            else if(promStatus==='positive'&&masStatus==='positive')periStr=`The course was complicated by ${promT} and MAS.`;
-            else {
-                const known=[];
-                if(promStatus==='positive')known.push(`${promT} was noted.`);
-                else if(promStatus==='negative')known.push('There was no premature rupture of membranes (PROM).');
-                if(masStatus==='positive')known.push('MAS was noted.');
-                else if(masStatus==='negative')known.push('No MAS was observed.');
-                periStr=known.join(' ');
-            }
+            if(promState==='negative'&&masState==='negative')periStr=`There was ${hlSource('no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS)')}.`;
+            else if(promState==='positive'&&masState==='negative')periStr=`${promT} was noted, but ${hlSource('no MAS')} was observed.`;
+            else if(promState==='negative'&&masState==='positive')periStr=`There was ${hlSource('no PROM')}, but MAS was noted.`;
+            else if(promState==='positive'&&masState==='positive')periStr=`The course was complicated by ${promT} and MAS.`;
+            else periStr=[promState==='positive'?`${promT} was noted.`:promState==='negative'?'There was no PROM.':'',masState==='positive'?'MAS was noted.':masState==='negative'?'No MAS was observed.':''].filter(Boolean).join(' ');
             const apS=data.apgar.split(/->|to/).map(s=>s.trim());
             let apStr=`APGAR scores were ${hlSource(apS[0]||'?')} and ${hlSource(apS[1]||'?')} at 1 and 5 minutes, respectively.`;
-            let peStr=admissionTemplatePE(peContext.assessmentData,peContext.findings,records);
-            if(peContext.conflicts.length)peStr+=` ${hlSource('PE source conflict: '+joinOxford(peContext.conflicts))}. Manual selection indicates presence, while the later or untimed source is negative or conflicting. Admission-time status is not established.`;
-            else if(peContext.deferred.length)peStr+=` ${hlSource(joinOxford(peContext.deferred))} was recorded outside the admission-time examination.`;
+            const peStr=templateAdmissionPE(data,peFindings);
 
             // Sepsis workup sentence for admission summary
             let sepsisStr='';
@@ -2001,14 +1557,9 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 sepsisStr=`Due to ${hlSource(reasonText)}, a ${hlSource('sepsis workup including CBC/DC, CRP, and blood culture was performed')}.`;
             }
 
-            const sepsisOverride=entries.filter(item=>/\b(?:sepsis|septic|CBC(?:\/DC)?|CRP|blood\s+culture)\b/i.test(item.line)&&uncompleted.test(item.line));
-            if(document.getElementById('sepsisWorkup')?.checked&&sepsisOverride.length)sepsisStr=renderNarrativeRecords(sepsisOverride);
-            const respiratory=entries.filter(item=>/\b(?:respiratory\s+support|oxygen|CPAP|BiPAP|HFNC|NCPAP|NIPPV|O2\s*hood)\b/i.test(item.line));
-            const respiratoryOverride=respiratory.filter(item=>scope.entries.some(initial=>initial.line===item.line)||uncompleted.test(item.line));
-            const glucoseOverride=entries.filter(item=>/\b(?:blood\s+glucose|glucose\s+monitoring|D-?stick)\b/i.test(item.line)&&uncompleted.test(item.line));
-            const transferOverride=entries.filter(item=>item.kind==='disposition'&&/\b(?:transfer|transferred|admi(?:tted|ssion))\b/i.test(item.line)&&uncompleted.test(item.line));
+            if(sepsisStr)sepsisStr=templateOverride(data,/\b(?:sepsis|CBC(?:\/DC)?|CRP|blood\s+culture)\b[^\n]*\b(?:planned|pending|declined|refused|deferred|not\s+(?:yet\s+)?(?:done|performed|obtained))\b/i,sepsisStr,['labs','treatment','course']);
             const nbcT=document.getElementById('nbcTransfer').checked, nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
-            const hypo=data.isHighRiskForHypoglycemia&&!glucoseOverride.length?`, with ${hlSource('blood glucose monitoring for 24 hours')}`:'';
+            const hypo=data.isHighRiskForHypoglycemia?`, with ${hlSource('blood glucose monitoring for 24 hours')}`:'';
             let fin='';
             if(nbcT){
                 if(hasRD&&nbcR==='respiratory') fin=`${hlSource('Oxygen was administered via O2 hood. However, symptoms persisted')}${hypo}. The infant was subsequently ${hlSource('transferred to NBC for further evaluation and care')}.`;
@@ -2019,302 +1570,342 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 if(hasRD) fin=`${hlSource('Oxygen was administered via O2 hood, after which the infant remained otherwise stable and was transferred for routine newborn care')}${hypo}.`;
                 else fin=`The infant was admitted to the Baby Room for routine newborn care${hypo}.`;
             }
-            if(respiratory.length&&hasRD){
-                const actual=renderNarrativeRecords(respiratoryOverride);
-                fin=`The infant was admitted to the Baby Room${hypo}.`;
-                if(actual)fin+=' '+actual;
-                if(nbcT&&!transferOverride.length)fin+=` The infant was subsequently ${hlSource('transferred to NBC for further evaluation and care')}.`;
+            if(hasRD)fin=templateOverride(data,/\b(?:respiratory\s+support|oxygen|CPAP|BiPAP|HFNC|O2\s*hood)\b/i,fin,['treatment']);
+            fin=templateOverride(data,/\b(?:admission|admitted|transfer|transferred)\b[^\n]*\b(?:planned|pending|deferred|cancelled|canceled|not\s+(?:yet\s+)?admitted)\b|\bnot\s+(?:yet\s+)?admitted\b/i,fin,['disposition']);
+            if(data.isHighRiskForHypoglycemia){
+                const glucose=templateClinicalValues(data,/\b(?:glucose|D-?stick)\b[^\n]*\b(?:planned|pending|declined|refused|deferred|not\s+(?:yet\s+)?(?:done|performed|checked|started))\b/i,['labs','treatment','course']);
+                if(glucose.length)fin=fin.replace(/, with <span class="highlight">blood glucose monitoring for 24 hours<\/span>/,'')+' '+glucose.map(templateCareSentence).join(' ');
             }
-            if(transferOverride.length){
-                const admissionPending=transferOverride.some(item=>/\b(?:admission\s+to\s+(?:BR|the\s+Baby\s+Room|Baby\s+Room|nursery)|(?:BR|Baby\s+Room|nursery)\s+admission)\b[^.;\n]*\b(?:planned|pending|deferred|cancelled|canceled|not\s+(?:yet\s+)?admitted)\b|\bnot\s+(?:yet\s+)?admitted\s+to\s+(?:BR|(?:the\s+)?Baby\s+Room|nursery)\b/i.test(item.line));
-                fin=(admissionPending?'':`The infant was admitted to the Baby Room${hypo}. `)+renderNarrativeRecords(transferOverride);
-            }
-            if(glucoseOverride.length&&data.isHighRiskForHypoglycemia)fin+=' '+renderNarrativeRecords(glucoseOverride);
             let mP=''; if(data.motherAge&&data.motherAge!=='?') mP=`${hlSource(data.motherAge)}-year-old `;
             mP+=`${hlSource('G'+(data.g||'?')+'P'+(data.p||'?'))} mother`;
             const s1=`This 1-day-old ${hlSource(data.selectedGender)} infant was born to a ${mP} at ${hlSource(data.ga)} weeks of gestation via ${dStr}${compStr}.`;
             const s2=`The birth weight was ${hlSource(data.bw)} gm (${hlSource(data.aga)}).`;
-            const unresolvedBirth=[data.ga==='?'&&data.gaSource?'Gestational-age source: '+data.gaSource:'',data.bw==='?'&&data.bwSource?'Birth-weight source: '+data.bwSource:''].filter(Boolean).map(value=>hlSource(value)+'.').join(' ');
-            return [s1,[...new Set(deliveryNotes)].map(maternalNarrativeSentence).join(' '),s2,unresolvedBirth,matStr,periStr,apStr,peStr,sepsisStr,fin].filter(Boolean).join(' ');
+            return [s1,s2,matStr,periStr,apStr,peStr,sepsisStr,fin].filter(Boolean).join(' ');
         }
 
         // ============================================================
         // GENERATE CONSULTATION
         // ============================================================
         function generateConsultation(data, peFindings) {
-            data=hivOutputData(data);
-            const records=getClinicalSourceRecords(data);
-            const weeks=outputGAWeeks(data);
-            const prematurity=weeks===null?'not documented':weeks<37?'+':'-';
-            const size=/^(?:AGA|SGA|LGA)$/.test(data.aga||'')?data.aga:'not documented';
-            const clinicalKeys=['labs','treatment','course','disposition','education'];
-            const clinical=clinicalSourceText(data,records,clinicalKeys);
-            const clinicalAvailable=clinicalKeys.some(key=>records[key].length);
-            const lines=[
-                'Dear Dr,',
-                'Please assess this newborn using the recorded information below.',
-                '',
-                '@ Maternal and perinatal information',
-                hlSource(`G${data.g||'?'} P${data.p||'?'} A${data.a||'?'}; maternal age: ${data.motherAge&&data.motherAge!=='?'?data.motherAge+' years':'not documented'}.`),
-                outputMaternalText(data),
-                outputPerinatalText(data),
-                `Prenatal steroid use: ${clinicalSourceField(data,records,'prenatalSteroid')}`,
-                `Prenatal antibiotics: ${clinicalSourceField(data,records,'prenatalAntibiotics')}`,
-                '',
-                '@ Newborn information',
-                outputBirthText(data),
-                hlSource(`Prematurity: ${prematurity}; size for gestational age: ${size}.`),
-                outputApgarText(data),
-                outputAssessment(data,peFindings),
-                '',
-                '@ Resuscitation record',
-                clinicalSourceField(data,records,'resuscitation'),
-                '',
-                '@ Clinical records',
-                clinical||(clinicalAvailable?'See the clinical source record preserved under physical examination.':'Review the supplied record for additional treatment, investigation results, and disposition.'),
-                outputSelectedPlans(data,peFindings),
-            ];
-            return lines.join('\n').replace(/\n/g,'<br>');
+            data=templateInitialData(hivOutputData(data),peFindings);
+            peFindings=data.templateManualPE;
+            const examination=templatePE(data,peFindings);
+            peFindings=examination.selected;
+            const pr=data.selectedGender==='male'?'he':data.selectedGender==='female'?'she':'the infant';
+            const His=data.selectedGender==='male'?'His':data.selectedGender==='female'?'Her':"The infant's";
+            const apS=data.apgar.split(/->|to/).map(s=>s.trim());
+            let dmText=data.deliveryMode==='?'?'?':data.deliveryMode==='NSD'?'vaginal delivery':(data.csReason?`${data.csPrefix}cesarean section (due to ${data.csReason})`:`${data.csPrefix}cesarean section`);
+            if(data.deliveryMode==='NSD'){
+                let dmMods=[];
+                if(data.vacuumMatch) dmMods.push('vacuum-assisted');
+                if(data.forcepsMatch) dmMods.push('forceps-assisted');
+                if(dmMods.length>0) dmText=`${dmMods.join(', ')} vaginal delivery`;
+            }
+
+            // Respiration
+            let respText='Normal';
+            if(peFindings.some(f=>f.includes('Respiratory distress'))){
+                const rf=peFindings.find(f=>f.includes('Respiratory distress'));
+                let sy=[];
+                if(rf.includes('nasal flaring'))sy.push('nasal flaring');
+                if(rf.includes('retraction'))sy.push('suprasternal or subcostal retractions');
+                respText=sy.length>0?hlSource(sy.join(', ')+'.'):hlSource('Grunting.');
+            }
+
+            // High-risk flags
+            const gaWeeks=parseInt(data.ga.split('+')[0])||40;
+            const isPrem=data.ga==='?'?'?':gaWeeks<37?'+':'-';
+            const isIugr=data.aga==='?'?'?':data.aga==='SGA'?'+':'-';
+            const hasPE=data.preEclampsiaSource?templateStatus(data.preEclampsiaStatus):data.preEclampsia?'+':'-';
+            const hasFD=data.fetalDistressSource?templateStatus(data.fetalDistressStatus):data.fetalDistress?'+':'-';
+            const promD=data.prom.present?data.prom.duration!==null?`PROM(+) for ${data.prom.duration} hrs`:'PROM(+)':`PROM(${templateStatus(data.prom.status)})`;
+
+            // Maternal serology string
+            const seroEntries=Object.entries(data.serology).filter(([key,v])=>(v!=='?'||data.serologySource?.[key])&&(key!=='HIV'||v==='+'));
+            let seroStr='not tested';
+            if(seroEntries.length>0) seroStr=seroEntries.map(([k,v])=>`${k}(${hlSource(v)})`).join(', ');
+
+            // GBS string
+            let gbsStr=data.isGbsPositive?hlSource(data.iapStatus==='adequate'?'GBS(+), s/p complete IAP':data.iapStatus==='inadequate'?'GBS(+), with incomplete IAP':'GBS(+)'):hlSource(`GBS(${templateStatus(data.gbsStatus)})`);
+
+            // GDM string
+            let gdmStr=data.gdmStatus!=='positive'?hlSource(`GDM(${templateStatus(data.gdmStatus)})`)
+                :data.gdm.includes('diet')?hlSource('GDM(+), diet control')
+                :data.gdm.includes('medication')?hlSource('GDM(+), medication')
+                :data.gdm.includes('insulin')?hlSource('GDM(+), insulin')
+                :hlSource('GDM(+)');
+
+            const gdmDetail=templateCoreTail(data,'gdm');
+            if(data.gdmStatus==='positive'&&gdmDetail&&!/^(?:under |on |with )?(?:diet(?: control)?|insulin|medication|OHA)[.]?$/i.test(gdmDetail))gdmStr=hlSource('GDM(+), '+gdmDetail);
+
+            // Prenatal steroid
+            const steroidStr=templateField(data,'prenatalSteroid')?hlSource(templateField(data,'prenatalSteroid')):gaWeeks<37?hlSource('[請填寫]'):'nil';
+
+            // Prenatal antibiotics
+            const iapDetail=templateIAPDetail(data);
+            if(/\bIAP\s+(?:pending|unknown|uncertain|not\s+documented)\b/i.test(iapDetail))gbsStr=hlSource('GBS(+), IAP completion uncertain');
+            const abx=iapDetail?`Prenatal antibiotics: ${hlSource(iapDetail)}`:templateField(data,'prenatalAntibiotics')?`Prenatal antibiotics: ${hlSource(templateField(data,'prenatalAntibiotics'))}`:data.isGbsPositive?`Prenatal antibiotics: ${hlSource('[請填寫]')}`:'Prenatal antibiotics: nil';
+
+            // Original resuscitation row; actual supplied actions fill the same row.
+            const hasRD=peFindings.some(f=>f.includes('Respiratory distress'));
+            const ffo=hasRD?'+':'-';
+            const resuscLine=templateResuscitation(data,hasRD);
+
+            // PE findings - show ALL
+            const toneState=templatePEState(data,'Hypotonia'), cyanosisState=templatePEState(data,'Cyanosis');
+            const hasHypotonia=toneState==='positive'||peFindings.some(f=>f.includes('Hypotonia'));
+            const hasCyanosis=cyanosisState==='positive'||peFindings.some(f=>f.includes('Cyanosis'));
+            const toneUncertain=['unknown','conflict'].includes(toneState)||examination.conflicts.some(finding=>finding.includes('Hypotonia'));
+            const cyanosisUncertain=['unknown','conflict'].includes(cyanosisState)||examination.conflicts.some(finding=>finding.includes('Cyanosis'));
+            const cy=cyanosisUncertain?hlSource('Cyanosis(?)'):hasCyanosis?hlSource('General cyanosis'):hlSource('No cyanosis');
+
+            // Corresponding source findings extend the original PE continuation.
+            const handledPE=['Respiratory distress','Hypotonia','Cyanosis'];
+            const otherFindings=peFindings.filter(f=>!handledPE.some(h=>f.includes(h)));
+            const sourceFindings=examination.parts.filter(part=>!handledPE.some(name=>part.toLowerCase().includes(name.toLowerCase()))&&!/\b(?:nasal\s+flaring|(?:subcostal\s+)?retractions?|grunting|tachypnea)\b/i.test(part));
+            const ddh=examination.ddh;
+            const msk=[...ddh.hip.map(value=>value==='suspected DDH on examination'&&!data.recordedAssessment?.hip?.source?'ddh suspect':value),...ddh.compression,...ddh.qualifiers.filter(item=>item.key!=='risk').map(item=>item.text)];
+            let peSection='';
+            const fList=[...sourceFindings,...otherFindings.map(f=>f.toLowerCase()),...msk];
+            if(fList.length)peSection=`\n${His} physical examination was also notable for ${hlSource(joinOxford(fList))}.`;
+            if(ddh.risk.length)peSection+=`${peSection?' ':`\n${His} examination noted `}${hlSource('DDH risk factors including '+joinOxford(ddh.risk))}${peSection?' were identified.':'.'}`;
+            const riskQualifiers=ddh.qualifiers.filter(item=>item.key==='risk').map(item=>item.text);
+            if(riskQualifiers.length)peSection+=`${peSection?' ':'\n'}DDH screening noted ${hlSource(riskQualifiers.join('; '))}.`;
+            // A supplied specific result replaces its fixed original inline value.
+            const peSource=String(data.sourcePE||'');
+            if(/\b(?:respiratory\s+distress|tachypnea|grunting|nasal\s+flaring|retractions?)\b/i.test(peSource)){
+                const respiratory=templateObservationParts(peSource).filter(line=>/\b(?:respiratory\s+distress|tachypnea|grunting|nasal\s+flaring|retractions?)\b/i.test(line));
+                if(respiratory.length)respText=hlSource(respiratory.join(', '));
+            }
+
+            // Disposition - BR vs NBC
+            const nbcT=document.getElementById('nbcTransfer').checked;
+            const nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
+            let disposition='';
+            if(nbcT){
+                if(nbcR==='respiratory') disposition=`Therefore, ${pr} was transferred to ${hlSource('NBC')} for further evaluation and treatment due to ${hlSource('persistent respiratory symptoms')}.`;
+                else if(nbcR==='jaundice') disposition=`Therefore, ${pr} was transferred to ${hlSource('NBC')} for further evaluation and treatment due to ${hlSource('progressive jaundice')}.`;
+                else disposition=`Therefore, ${pr} was transferred to ${hlSource('NBC')} for further evaluation and treatment.`;
+            } else {
+                disposition=`Therefore, ${pr} was transferred to BR for further evaluation and treatment.`;
+            }
+
+            let t=`Dear Dr,
+The neonatal resuscitation team attendance at delivery was requested by obstetrician because of high-risk pregnancy with prematurity(${isPrem}), fetal distress(${hasFD}), maternal preeclampsia(${hlSource(hasPE)}), IUGR(${isIugr}), ${hlSource(promD)}.
+
+@ Maternal condition: G${hlSource(data.g||'?')} P${hlSource(data.p||'?')} A${hlSource(data.a||'?')}, GA at ${hlSource(data.ga)} wks, ${hlSource(data.motherAge)} y/o mother
+Maternal blood type: ${hlSource(data.bloodGroup)}
+Serology: ${seroStr}
+GBS: ${gbsStr}
+GDM: ${gdmStr}
+Prenatal steroid use: ${steroidStr}
+${abx}
+
+@ Newborn's condition: GA ${hlSource(data.ga)} weeks, BW ${hlSource(data.bw)} gm, ${hlSource(data.aga)}, ${hlSource(data.selectedGender)} neonate, born via ${hlSource(dmText)}${templateInfantHIV(data)?`, ${hlSource('Infant HIV(+)')}`:''}
+Apgar score: ${hlSource(apS[0]||'?')} (1分鐘) to ${hlSource(apS[1]||'?')} (5分鐘).
+Activity: ${toneUncertain?hlSource('?'):hasHypotonia?hlSource('not doing well'):'fair'}. Muscle tone: ${toneUncertain?hlSource('?'):hasHypotonia?hlSource('decreased'):'normal'}. ${cy}.
+Respiration: ${respText}${peSection}
+
+High risk neonatal critical care:
+${resuscLine}
+
+${disposition}`;
+            return t.replace(/\n/g,'<br>');
         }
 
         // ============================================================
         // GENERATE DISCHARGE SUMMARY
         // ============================================================
-        // The discharge tab keeps the original BR course template. Supplied
-        // BR records replace matching template clauses; birth and prenatal
-        // history remain in the admission note and consultation.
-        function dischargeTemplateContext(data) {
-            const records=getClinicalSourceRecords(data);
-            const entries=narrativeClinicalEntries(data,records).filter(item=>!/^prenatal/.test(item.kind)&&item.kind!=='resuscitation');
-            const text=entries.map(item=>item.line).join('\n');
-            const has=pattern=>pattern.test(text);
-            const prophylaxisPattern=/\b(?:prophylaxis|immunizations?|vaccin(?:e|ation)s?|HBIG|HBV|hepatitis\s*B|Vitamin\s*K1?|tetracycline|ophthalmic\s+ointment)\b/i;
-            const prophylaxis=entries.filter(item=>prophylaxisPattern.test(item.line));
-            const closing=entries.filter(item=>/^(?:(?:the\s+)?(?:infant|baby|newborn)\s+(?:was\s+)?)?(?:discharg(?:e|ed)|condition\s+at\s+discharge|follow[- ]?up|OPD|MBD|transferred|transfer)\b|^disposition\s*:/i.test(item.line));
-            const course=entries.filter(item=>!prophylaxis.includes(item)&&!closing.includes(item));
-            const respiratoryUnresolved=has(/\b(?:CPAP|BiPAP|HFNC|NCPAP|NIPPV|oxygen|O2\s*hood|respiratory\s+support)\b/i)
-                &&!has(/\b(?:weaned\s+to\s+room\s+air|on\s+room\s+air|respiratory\s+(?:distress|symptoms?)\s+(?:had\s+)?resolved|(?:CPAP|BiPAP|HFNC|oxygen|O2\s*hood)\s+(?:was\s+)?(?:stopped|discontinued|not\s+(?:required|indicated|used)))\b/i);
-            const unresolved=respiratoryUnresolved
-                ||has(/\bpersistent\s+fever\b|\bfever\s+(?:persisted|persists|continued|continues|recurred)\b|\b(?:poor\s+feeding|feeding\s+(?:was\s+)?not\s+tolerated|NPO)\b/i)
-                ||has(/\b(?:bilirubin|T[SC]B|glucose|CRP|blood\s+culture)\b[^\n]*\b(?:elevated|high|low|positive|abnormal|pending)\b|\bphototherapy\s+(?:was\s+)?(?:started|initiated|continued|planned)\b/i)
-                ||has(/\b(?:discharg(?:e|ed)|transfer(?:red)?)\b[^\n]*\b(?:planned|pending|deferred|cancelled|canceled|not\s+yet|not\s+ready)\b|\bnot\s+(?:yet\s+)?discharged\b/i);
-            return {records,entries,text,has,prophylaxis,closing,course,unresolved,respiratoryUnresolved};
-        }
         function generateDischargeSummary(data, peFindings) {
             data=hivOutputData(data);
-            const context=dischargeTemplateContext(data), {records,has,prophylaxis,closing,course}=context;
-            const conflicts=collectPEConflicts(data,peFindings);
-            const selected=peFindings.filter(finding=>!conflicts.includes(finding));
-            const hasRD=selected.some(finding=>finding.includes('Respiratory distress'));
-            const hasCap=document.getElementById('peCaput')?.checked&&!conflicts.some(finding=>finding.includes('Caput succedaneum'));
-            const nbcT=document.getElementById('nbcTransfer')?.checked, nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
-            const parts=[], care=[];
-
-            // Restore the original routine prophylaxis sentence, replacing only
-            // a named item when its administration is explicitly documented.
-            const prophylaxisText=prophylaxis.map(item=>item.line).join('\n');
-            const namedProphylaxis=/\b(?:HBIG|HBV|hepatitis\s*B|vaccin(?:e|ation)s?|Vitamin\s*K1?|tetracycline|ophthalmic\s+ointment)\b/i;
-            const genericProphylaxis=prophylaxis.some(item=>/\b(?:routine\s+prophylaxis|all\s+(?:routine\s+)?prophylaxis)\b/i.test(item.line)&&!namedProphylaxis.test(item.line));
-            const routine=[
-                ['HBV vaccine (IM)',/\b(?:HBV|hepatitis\s*B|vaccin(?:e|ation)s?)\b/i],
-                ['tetracycline ophthalmic ointment (topical)',/\b(?:tetracycline|ophthalmic\s+ointment|eye\s+ointment)\b/i],
-                ['Vitamin K1 (IM)',/\bVitamin\s*K1?\b/i],
-            ].filter(([,pattern])=>!genericProphylaxis&&!pattern.test(prophylaxisText)).map(([label])=>label);
-            const needsHBIG=(data.serology.HBsAg==='+'||data.serology.HBeAg==='+')&&!genericProphylaxis&&!/\bHBIG\b/i.test(prophylaxisText);
-            let prophylaxisSentence=routine.length?`Upon admission, the infant received routine prophylaxis including ${joinOxford(routine)}${needsHBIG?`, plus ${hl('HBIG (IM)')}`:''}.`:needsHBIG?`Upon admission, the infant received ${hl('HBIG (IM)')}.`:'';
-            parts.push([prophylaxisSentence,renderNarrativeRecords(prophylaxis)].filter(Boolean).join(' '));
-
-            // Original checkbox-driven course clauses remain available. An
-            // explicit source about the same care takes precedence over them.
-            const respiratoryRecorded=has(/\b(?:respiratory|oxygen|CPAP|BiPAP|HFNC|NCPAP|NIPPV|O2\s*hood|room\s+air|tachypnea)\b/i);
-            if(hasRD&&!respiratoryRecorded){
-                const finding=selected.find(item=>item.includes('Respiratory distress')), signs=[];
-                if(finding?.includes('nasal flaring'))signs.push('nasal flaring');
-                if(finding?.includes('retraction'))signs.push('subcostal retraction');
-                const symptoms=signs.length?`mild shortness of breath accompanied by ${signs.join(' and ')}`:'mild respiratory distress';
-                care.push(nbcT&&nbcR==='respiratory'
-                    ?`Regarding respiratory status, due to ${hl(symptoms)}, an ${hl('O2 hood was provided')}. However, ${hl('the symptoms persisted')}.`
-                    :`Regarding respiratory status, due to ${hl(symptoms)}, an ${hl('O2 hood was provided with good response')}. The infant was subsequently ${hl('weaned to room air')} and remained stable.`);
+            const examination=templatePE(data,peFindings);
+            peFindings=peFindings.filter(finding=>!examination.conflicts.includes(finding));
+            const hasRD=peFindings.some(f=>f.includes('Respiratory distress'));
+            const hasCap=document.getElementById('peCaput')?.checked;
+            const nbcT=document.getElementById('nbcTransfer').checked, nbcR=document.querySelector('input[name="nbcReason"]:checked')?.value;
+            let promDV=0; if(data.prom.present&&data.prom.duration&&!isNaN(parseInt(data.prom.duration))) promDV=parseInt(data.prom.duration);
+            const needsHBIG=data.serology.HBsAg==='+'||data.serology.HBeAg==='+';
+            let parts=[];
+            let proph="HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM)";
+            if(needsHBIG) proph+=`, plus ${hlSource('HBIG (IM)')}`;
+            parts.push(templateProphylaxis(data));
+            let cc=[];
+            if(hasRD){const rf=peFindings.find(f=>f.includes('Respiratory distress'));let sy=[];if(rf?.includes('nasal flaring'))sy.push('nasal flaring');if(rf?.includes('retraction'))sy.push('subcostal retraction');const sT=sy.length>0?`mild shortness of breath accompanied by ${sy.join(' and ')}`:'mild respiratory distress';if(nbcT&&nbcR==='respiratory')cc.push(`Regarding respiratory status, due to ${hlSource(sT)}, an ${hlSource('O2 hood was provided')}. However, ${hlSource('the symptoms persisted')}.`);else cc.push(`Regarding respiratory status, due to ${hlSource(sT)}, an ${hlSource('O2 hood was provided with good response')}. The infant was subsequently ${hlSource('weaned to room air')} and remained stable.`);}
+            if(!hasRD){const actual=templateClinicalValues(data,/\b(?:respiratory\s+support|oxygen|CPAP|BiPAP|HFNC|O2\s*hood)\b/i,['treatment','course']);if(actual.length)cc.push(actual.map(templateCareSentence).join(' '));}
+            // Sepsis workup - unified, driven by checkbox
+            if(document.getElementById('sepsisWorkup').checked){
+                const sReasons=Array.from(document.querySelectorAll('input[name="sepsisReason"]:checked')).map(i=>i.value);
+                let sRP=[];
+                if(sReasons.includes('prom')) sRP.push('prolonged PROM (>18 hours)');
+                if(sReasons.includes('gbs')) sRP.push('GBS colonization with incomplete IAP');
+                if(sReasons.includes('fever')) sRP.push('neonatal fever');
+                if(sReasons.includes('maternal_fever')) sRP.push('maternal fever');
+                const sRT=sRP.length>0?joinOxford(sRP):'clinical concern for infection';
+                cc.push(`Due to ${hlSource(sRT)}, a ${hlSource('sepsis workup including CBC/DC, CRP, and blood culture was performed')}. The ${hlSource('laboratory results were within normal limits')}.`);
             }
-            const sepsisRecorded=has(/\b(?:sepsis|septic|CBC(?:\/DC)?|CRP|blood\s+culture|antibiotics?|ampicillin|gentamicin)\b/i);
-            if(document.getElementById('sepsisWorkup')?.checked&&!sepsisRecorded){
-                const reasons=Array.from(document.querySelectorAll('input[name="sepsisReason"]:checked')).map(input=>input.value);
-                const labels={prom:'prolonged PROM (>18 hours)',gbs:'GBS colonization with incomplete IAP',fever:'neonatal fever',maternal_fever:'maternal fever'};
-                const named=reasons.map(reason=>labels[reason]).filter(Boolean);
-                care.push(`Due to ${hl(named.length?joinOxford(named):'clinical concern for infection')}, a ${hl('sepsis workup including CBC/DC, CRP, and blood culture was performed')}. The ${hl('laboratory results were within normal limits')}.`);
-            }
-            const hasCeph=selected.some(finding=>finding.includes('Cephalohematoma'));
+            if(!document.getElementById('sepsisWorkup').checked){const actual=templateClinicalValues(data,/\b(?:sepsis|CBC(?:\/DC)?|CRP|blood\s+culture)\b/i,['labs','treatment','course']);if(actual.length)cc.push(actual.map(templateCareSentence).join(' '));}
+            const hasCeph=peFindings.some(f=>f.includes('Cephalohematoma'));
             const caputHC=hasCap&&document.querySelector('#caputDetails input[name="caputDetail"]:checked');
             const cephHC=hasCeph&&document.querySelector('#cephDetails input[name="cephDetail"]:checked');
-            if((caputHC||cephHC)&&!has(/\b(?:head\s+circumference|HC)\b/i)){
-                const diagnoses=[];
-                if(caputHC)diagnoses.push('caput succedaneum');
-                if(cephHC)diagnoses.push('cephalohematoma');
-                care.push(`Due to the presence of ${hl(diagnoses.join(' and '))}, head circumference was monitored ${hl(CAMPUS.hcMonitor.dischargeSentence)}. ${hl('No significant interval increase was observed')}.`);
+            if(caputHC||cephHC) {
+                const dxParts=[];
+                if(caputHC) dxParts.push('caput succedaneum');
+                if(cephHC) dxParts.push('cephalohematoma');
+                const dx=dxParts.join(' and ');
+                cc.push(`Due to the presence of ${hlSource(dx)}, head circumference was monitored ${hlSource(CAMPUS.hcMonitor.dischargeSentence)}. ${hlSource('No significant interval increase was observed')}.`);
             }
-            const feverRecorded=has(/\bfever\b|\bfebrile\b/i)||/\bpersistent\s+fever\b|\bfever\s+(?:persisted|continued|recurred)\b/i.test(data.sourcePE||'');
-            if(selected.some(finding=>finding.includes('Fever'))&&!feverRecorded)care.push(`The infant developed ${hl('fever')} during the hospital course, which ${hl('resolved without intervention')}.`);
-            if(data.isHighRiskForHypoglycemia&&!has(/\b(?:blood\s+glucose|glucose|D-?stick|hypoglycemia)\b/i))care.push(hl('Blood glucose levels were monitored per protocol and remained within normal limits.'));
-
-            const educationRecorded=records.education.some(line=>line.replace(/^[^:]+:/,'').trim());
-            const udt=selected.find(finding=>finding.includes('Undescended testis'));
-            const hydrocele=selected.some(finding=>finding.includes('Hydrocele'));
-            if(udt&&!educationRecorded){
-                const side=udt.match(/\((lt|rt|bilateral)\)/i)?.[1]?.toLowerCase();
-                const description=side==='bilateral'?'bilateral undescended testes':`${side==='lt'?'left ':side==='rt'?'right ':''}undescended testis`;
-                care.push(EDU_TEMPLATES.udt[getVerbosity()](description));
+            if(peFindings.some(f=>f.includes('Fever'))) cc.push(`The infant developed ${hlSource('fever')} during the hospital course, which ${hlSource('resolved without intervention')}.`);
+            if(!peFindings.some(f=>f.includes('Fever'))){const actual=templateClinicalValues(data,/\b(?:fever|febrile)\b/i,['course','treatment']);if(actual.length)cc.push(actual.map(templateCareSentence).join(' '));}
+            const ddhText=templateDischargeDDH(data,peFindings);
+            if(ddhText)cc.push(ddhText);
+            if(data.isHighRiskForHypoglycemia) cc.push(hlSource("Blood glucose levels were monitored per protocol and remained within normal limits."));
+            else {const actual=templateClinicalValues(data,/\b(?:blood\s+glucose|glucose|D-?stick)\b/i,['labs','course','treatment']);if(actual.length)cc.push(actual.map(templateCareSentence).join(' '));}
+            // UDT education
+            const verb=getVerbosity();
+            const udtPE=peFindings.find(f=>f.includes('Undescended testis'));
+            if(udtPE){
+                const sideM=udtPE.match(/\((lt|rt|bilateral)\)/i);
+                const sideStr=sideM?(sideM[1].toLowerCase()==='bilateral'?'bilateral':sideM[1].toLowerCase()==='lt'?'left':'right'):'';
+                const udtDesc=sideStr==='bilateral'?'bilateral undescended testes':(sideStr?sideStr+' ':'')+'undescended testis';
+                cc.push(templateOverride(data,/\b(?:undescended|testis|UDT)\b/i,EDU_TEMPLATES.udt[verb](udtDesc),['education']));
             }
-            if(hydrocele&&!educationRecorded)care.push(EDU_TEMPLATES.hydrocele[getVerbosity()]());
-
-            const described=selected.filter(finding=>
-                hasRD&&!respiratoryRecorded&&finding.includes('Respiratory distress')
-                ||(caputHC||cephHC)&&!has(/\b(?:head\s+circumference|HC)\b/i)&&/Caput succedaneum|Cephalohematoma/.test(finding)
-                ||finding.includes('Fever')&&!feverRecorded
-                ||!educationRecorded&&/Undescended testis|Hydrocele/.test(finding));
-            const ddh=ddhTemplateContext(data,selected);
-            const examination=narrativePE({...data,sourcePE:ddh.sourcePE,recordedAssessment:undefined},peFindings.filter(finding=>!finding.includes('DDH suspect')&&!described.includes(finding)),records);
-            if(examination)care.push(examination);
-            const risks=[...ddh.risk,...ddh.compression], riskText=joinOxford(risks.map(hlSource));
-            const followupRecorded=has(/\b(?:DDH|hip|orthopedic)\b|\b(?:follow[- ]?up|referral)\b[^\n]*\b(?:declined|refused|cancelled|canceled|pending|planned)\b/i);
-            if(ddh.hip.length&&!followupRecorded){
-                const peText=joinOxford(ddh.hip.map(hlSource));
-                const reason=risks.length?`identified DDH risk factors including ${riskText}, as well as ${peText}`:`${peText} on physical examination`;
-                care.push(`Due to ${reason}, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
-            }else if(risks.length&&!ddh.hip.length&&ddh.hipNegative&&!ddh.notes.length&&!followupRecorded){
-                care.push(`Due to identified DDH risk factors including ${riskText}, DDH screening was performed; however, ${hl('physical examination of the hips was unremarkable')}.`);
-            }else{
-                if(risks.length)care.push(`DDH risk factors including ${riskText} were identified.`);
-                if(ddh.hip.length)care.push(`Musculoskeletal examination was notable for ${joinOxford(ddh.hip.map(hlSource))}.`);
+            if(peFindings.some(f=>f.includes('Hydrocele'))){
+                cc.push(templateOverride(data,/\bhydrocele\b/i,EDU_TEMPLATES.hydrocele[verb](),['education']));
             }
-            care.push(...ddh.notes);
-            if(care.length)parts.push(care.join(' '));
-
-            // Preserve source chronology. Only independent single-day records
-            // on the same time scale are reordered, as in the prior renderer.
-            const dated=course.map(item=>({...item,days:[...item.line.matchAll(/\bon day\s+(\d+)(\s+of life)?(?=[.,;]|\s*$)/gi)].map(match=>({number:Number(match[1]),anchor:match[2]?'life':'unspecified'}))}));
-            const sameScale=dated.length>1&&dated.every(item=>item.days.length===1&&!/;|\.\s+[A-Z]/.test(item.line))&&new Set(dated.map(item=>item.days[0].anchor)).size===1;
-            const recordedCourse=renderNarrativeRecords(sameScale?dated.sort((a,b)=>a.days[0].number-b.days[0].number):course);
-            if(recordedCourse)parts.push(recordedCourse);
-            const hasRoutine=has(/\b(?:routine\s+(?:nursery|newborn|BR)\s+care|rooming[- ]in)\b/i);
+            const sourcePhrase=examination.phrase;
+            if(sourcePhrase)cc.push(`On physical examination, ${joinOxford(examination.parts.map(hlSource))} ${examination.parts.length===1?'was':'were'} noted.`);
+            // Explicit care facts replace only their matching original clause.
+            const overrides=[
+                [/Regarding respiratory status/,/\b(?:respiratory\s+support|oxygen|CPAP|BiPAP|HFNC|O2\s*hood)\b/i,['treatment','course']],
+                [/sepsis workup/,/\b(?:sepsis|CBC(?:\/DC)?|CRP|blood\s+culture)\b/i,['labs','treatment','course']],
+                [/head circumference/,/\b(?:head\s+circumference|HC)\b/i,['labs','course']],
+                [/developed .*fever/,/\b(?:fever|febrile)\b/i,['course','treatment']],
+                [/Blood glucose levels/,/\b(?:blood\s+glucose|glucose|D-?stick)\b/i,['labs','course','treatment']],
+            ];
+            for(let i=0;i<cc.length;i++)for(const [clause,source,keys] of overrides)if(clause.test(cc[i]))cc[i]=templateOverride(data,source,cc[i],keys);
+            if(cc.length>0) parts.push(cc.join(" "));
             if(nbcT){
-                if(!closing.length){
-                    if(nbcR==='respiratory'&&!respiratoryRecorded)parts.push(hasRD?`Consequently, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`:`Due to ${hl('persistent tachypnea')}, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`);
-                    else if(nbcR==='jaundice'&&!has(/\b(?:jaundice|bilirubin|T[SC]B|phototherapy)\b/i))parts.push(`Due to ${hl('noted jaundice and surging bilirubin levels')}, the infant was ${hl('admitted to the NBC for further evaluation and care')}.`);
-                    else parts.push(`The infant was ${hl('admitted to the NBC for further evaluation and care')}.`);
-                }
-            }else if(!hasRoutine&&!context.unresolved)parts.push(hasRD&&!respiratoryRecorded?'The infant was managed with routine nursery care, and rooming-in with the mother was initiated after respiratory stabilization.':'The infant was managed with routine nursery care and rooming-in was arranged with the mother.');
-            if(!has(/\b(?:feeding|feeds?|breastfeeding|formula|NPO|nil\s+per\s+os)\b/i)&&!context.unresolved)parts.push('Feeding volume was gradually increased as tolerated.');
-            const closingParts=[];
-            if(!nbcT&&!has(/\b(?:bilirubin|T[SC]B|phototherapy)\b/i)&&!context.unresolved)closingParts.push('Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL).');
-            if(closing.length)closingParts.push(renderNarrativeRecords(closing));
-            else if(!nbcT&&!context.unresolved)closingParts.push('The infant was discharged in stable condition with scheduled MBD and OPD follow-up.');
-            if(closingParts.length)parts.push('<br><br>',closingParts.join(' '));
-            return parts.filter(Boolean).join(' ');
+                let care='';
+                if(nbcR==='respiratory'){care=hasRD?`Consequently, the infant was ${hlSource('admitted to the NBC for further evaluation and care')}.`:`Due to ${hlSource('persistent tachypnea')}, the infant was ${hlSource('admitted to the NBC for further evaluation and care')}.`;}
+                else if(nbcR==='jaundice') care=`Due to ${hlSource('noted jaundice and surging bilirubin levels')}, the infant was ${hlSource('admitted to the NBC for further evaluation and care')}.`;
+                else care=`The infant was ${hlSource('admitted to the NBC for further evaluation and care')}.`;
+                parts.push(care);
+                parts.push("Feeding volume was gradually increased as tolerated.");
+            } else {
+                let care="The infant was managed with routine nursery care";
+                care+=hasRD?", and rooming-in with the mother was initiated after respiratory stabilization.":" and rooming-in was arranged with the mother.";
+                parts.push(care);
+                parts.push("Feeding volume was gradually increased as tolerated.");
+                parts.push("<br><br>");
+                parts.push("Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.");
+            }
+            const careFields=[
+                [/^The infant was managed with routine nursery care/,/\b(?:routine\s+(?:nursery|newborn|BR)\s+care|rooming[- ]in)\b/i,['course']],
+                [/^Feeding volume was gradually increased/,/\b(?:feeding|feeds?|breastfeeding|formula|NPO|nil\s+per\s+os)\b/i,['course']],
+            ];
+            for(let i=0;i<parts.length;i++)for(const [clause,source,keys] of careFields)if(clause.test(parts[i]))parts[i]=templateOverride(data,source,parts[i],keys);
+            const closing=parts.findIndex(part=>part.startsWith('Prior to discharge,'));
+            if(closing>=0){
+                const bilirubin=templateOverride(data,/\b(?:bilirubin|T[SC]B|phototherapy)\b/i,'Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL).',['labs','treatment','course']);
+                const disposition=templateOverride(data,/\b(?:discharg(?:e|ed)|condition\s+at\s+discharge|OPD|MBD)\b/i,'The infant was discharged in stable condition with scheduled MBD and OPD follow-up.',['disposition','course']);
+                parts[closing]=[bilirubin,disposition].filter(Boolean).join(' ');
+            }
+            return parts.join(' ');
         }
 
         // ============================================================
         // GENERATE DIAGNOSIS
         // ============================================================
-        // Only definite recorded PE observations join the original diagnosis
-        // list. Risk screening is not a diagnosis, and alternatives/unknowns
-        // remain in the examination text instead of becoming confirmed disease.
-        function recordedDiagnosisFindings(data,dxMap) {
-            const records=getClinicalSourceRecords(data), clinicalLines=new Set(Object.values(records).flat());
-            let source=String(data.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
-            const hip=data.recordedAssessment?.hip;
-            const hipSource=String(hip?.renderSource||(!source&&hip?.source)||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
-            if(hipSource&&!source.includes(hipSource))source=[source,hipSource].filter(Boolean).join('\n');
-            source=normalizeAssessmentText(source);
-            if(!source)return [];
-            const literal=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
-            const fields=Object.entries(dxMap).map(([key,diagnosis])=>({name:key,re:'\\b'+literal(key)+'\\b',diagnosis}));
-            fields.push(...ASSESSMENT_FIELDS.hip.map(field=>({...field,diagnosis:(field.positive||field.name).replace(/^[a-z]/,letter=>letter.toUpperCase())})));
-            const full=parseAssessmentGroup(source,fields);
-            const starts='(?:(?:left|right|bilateral|lt|rt|no|not|positive|negative|possible|suspected)\\s+)*(?:'+fields.map(field=>field.re).join('|')+')';
-            const chunks=source.split(new RegExp('[,;\\n]\\s*(?='+starts+')','gi')).map(chunk=>chunk.trim()).filter(Boolean);
-            const observations=[];
-            for(const chunk of chunks){
-                for(const field of fields){
-                    const found=chunk.match(new RegExp(field.re,'i'));
-                    if(!found)continue;
-                    const result=parseAssessmentGroup(chunk,[field]).records[0];
-                    let state=result?.state||'unknown';
-                    const bare=new RegExp('^(?:(?:left|right|bilateral|lt|rt)\\s+)?(?:'+field.re+')[.]?$','i').test(chunk);
-                    if(state==='unknown'&&bare)state='positive';
-                    else if(full.records.find(record=>record.name===field.name)?.state==='unknown')continue;
-                    const before=chunk.slice(0,found.index), after=chunk.slice(found.index+found[0].length);
-                    const side=before.match(/\b(left|right|lt|rt|bilateral|both)(?:[- ]sided)?\s*$/i)?.[1]
-                        ||after.match(/^\s*(?:\((?:[+-]|negative|positive)\)\s*)?[,;:]?\s*(?:on\s+(?:the\s+)?)?\(?\s*(left|right|lt|rt|bilateral|both)\b/i)?.[1]||'';
-                    const normalizedSide=/^(?:lt|left)$/i.test(side)?'left':/^(?:rt|right)$/i.test(side)?'right':side?'bilateral':'';
-                    const time=chunk.match(/\b(?:at\s+birth|(?:at|on)\s+(?:BR\s+)?admission|on\s+day\s+\d+(?:\s+of\s+life)?|at\s+\d+(?:\.\d+)?\s*(?:hours?|hrs?|days?)\s+of\s+(?:age|life))\b/i)?.[0]?.toLowerCase()||'';
-                    let detail=(before+' '+after).replace(/\(\s*\+\s*\)/g,'').replace(/\b(?:(?:was|were|is|are)\s+)?(?:positive|pos|present)\b/gi,'').replace(/^\s*[,;:]|[,;:.]\s*$/g,'').replace(/\s+/g,' ').trim();
-                    detail=detail.replace(/^(?:left|right|lt|rt|bilateral|both)\s*[,;:]?\s*/i,normalizedSide?normalizedSide+' ':'').trim();
-                    observations.push({name:field.name,diagnosis:field.diagnosis,state,side:normalizedSide,time,detail});
-                }
-            }
-            const definite=observations.filter(item=>item.state==='positive'&&!observations.some(other=>other.name===item.name&&other.state!=='positive'
-                &&(!item.side||!other.side||item.side==='bilateral'||other.side==='bilateral'||item.side===other.side)
-                &&(!item.time||!other.time||item.time===other.time)));
-            return [...new Map(definite.map(item=>[item.diagnosis+'|'+item.detail,item])).values()];
-        }
-
         function generateDiagnosis(data, peFindings) {
             data=hivOutputData(data);
-            const lines=[];
-            const weeks=outputGAWeeks(data);
-            const maturity=weeks===null?'Newborn':weeks<37?'Preterm':'Term';
-            const ga=data.ga&&data.ga!=='?'?`${data.ga} weeks`:data.gaSource?'unresolved (see source)':'not documented';
-            const bw=data.bw&&data.bw!=='?'?`${data.bw} gm`:data.bwSource?'unresolved (see source)':'not documented';
-            const size=/^(?:AGA|SGA|LGA)$/.test(data.aga||'')?data.aga:'size-for-gestation classification not documented';
-            lines.push(`# ${maturity} infant, gestational age ${ga}, BW ${bw}, ${size}`);
-            const dxMap={
-                'Respiratory distress':'Respiratory distress',
-                'Jaundice':'Neonatal jaundice','Cyanosis':'Cyanosis','Pale':'Pallor','Fever':'Neonatal fever',
-                'Caput succedaneum':'Caput succedaneum','Cephalohematoma':'Cephalohematoma','Molding':'Molding','Craniotabes':'Craniotabes',
-                'Heart murmur':'Heart murmur','Abdominal distension':'Abdominal distension','Umbilical hernia':'Umbilical hernia',
-                'Undescended testis':'Undescended testis','Inguinal hernia':'Inguinal hernia','Hypospadias':'Hypospadias','Hydrocele':'Hydrocele',
-                'Clavicle fracture':'Clavicle fracture','DDH suspect':'Suspected developmental dysplasia of the hip (DDH)','Sacral dimples':'Sacral dimple',
-                'Hypotonia':'Hypotonia','Jitteriness':'Jitteriness','Forceps/vaccum impression':'Forceps/vacuum impression',
-                'Hemangioma':'Hemangioma','Mongolian spots':'Mongolian spots','Skin rash/pigmentation':'Skin rash/pigmentation','Erythema toxicum':'Erythema toxicum',
+            peFindings=peFindings.filter(finding=>!collectPEConflicts(data,peFindings).includes(finding));
+            const lines = [];
+            // Line 1: always present
+            const termStr = data.ga==='?'?'Newborn':parseInt(data.ga.split('+')[0]) < 37 ? 'Preterm' : 'Term';
+            lines.push(`# ${termStr} infant, gestational age ${data.ga} weeks, BW ${data.bw} gm, ${data.aga}`);
+
+            // PE-based diagnoses with proper clinical naming
+            const dxMap = {
+                'Respiratory distress': 'Respiratory distress',
+                'Jaundice': 'Neonatal jaundice',
+                'Cyanosis': 'Cyanosis',
+                'Pale': 'Pallor',
+                'Fever': 'Neonatal fever',
+                'Caput succedaneum': 'Caput succedaneum',
+                'Cephalohematoma': 'Cephalohematoma',
+                'Molding': 'Molding',
+                'Craniotabes': 'Craniotabes',
+                'Heart murmur': 'Heart murmur',
+                'Abdominal distension': 'Abdominal distension',
+                'Umbilical hernia': 'Umbilical hernia',
+                'Undescended testis': 'Undescended testis',
+                'Inguinal hernia': 'Inguinal hernia',
+                'Hypospadias': 'Hypospadias',
+                'Hydrocele': 'Hydrocele',
+                'Clavicle fracture': 'Clavicle fracture',
+                'DDH suspect': 'Suspected developmental dysplasia of the hip (DDH)',
+                'Sacral dimples': 'Sacral dimple',
+                'Hypotonia': 'Hypotonia',
+                'Jitteriness': 'Jitteriness',
+                'Forceps/vaccum impression': 'Forceps/vacuum impression',
+                'Hemangioma': 'Hemangioma',
+                'Mongolian spots': 'Mongolian spots',
+                'Skin rash/pigmentation': 'Skin rash/pigmentation',
+                'Erythema toxicum': 'Erythema toxicum',
             };
-            const peConflicts=collectPEConflicts(data,peFindings);
-            peFindings.filter(finding=>!peConflicts.includes(finding)).forEach(finding=>{
-                for(const [key,diagnosis] of Object.entries(dxMap)){
-                    if(!finding.includes(key)) continue;
-                    const side=finding.match(/\((lt|rt|bilateral)\)/i)?.[1];
-                    const detail=key==='Respiratory distress'?finding.slice(key.length):side?`, ${side}`:'';
-                    lines.push(`# ${diagnosis}${detail}`);break;
+            peFindings.forEach(f => {
+                for (const [key, dx] of Object.entries(dxMap)) {
+                    if (f.includes(key)) {
+                        // Append side/detail info if present
+                        let detail = '';
+                        const sideMatch = f.match(/\((lt|rt|bilateral)\)/i);
+                        if (sideMatch) detail = `, ${sideMatch[1]}`;
+                        lines.push(`# ${dx}${detail}`);
+                        break;
+                    }
                 }
             });
+
             for(const finding of recordedDiagnosisFindings(data,dxMap)){
-                const plain='# '+finding.diagnosis;
-                const rendered=plain+(finding.detail?', '+finding.detail:'');
-                const sideAlias=finding.side==='left'?'lt':finding.side==='right'?'rt':finding.side;
-                const generic=lines.findIndex(line=>line===plain||finding.side&&(line===plain+', '+finding.side||line===plain+', '+sideAlias));
-                const existing=lines.some(line=>line===plain||line.startsWith(plain+', ')||line.startsWith(plain+' ('));
+                const plain='# '+finding.diagnosis, rendered=plain+(finding.detail?', '+finding.detail:'');
+                const alias=finding.side==='left'?'lt':finding.side==='right'?'rt':finding.side;
+                const generic=lines.findIndex(line=>line===plain||finding.side&&(line===plain+', '+finding.side||line===plain+', '+alias));
                 if(generic>=0&&finding.detail)lines[generic]=rendered;
-                else if(!lines.includes(rendered)&&!(!finding.detail&&existing))lines.push(rendered);
+                else if(!lines.some(line=>line===rendered||!finding.detail&&line.startsWith(plain)))lines.push(rendered);
             }
-            for(const finding of peConflicts){
-                const entry=Object.entries(dxMap).find(([key])=>finding.includes(key));
-                if(!entry)continue;
-                const side=finding.match(/\((lt|rt|bilateral)\)/i)?.[1];
-                lines.push(`# ${entry[1]}${side?', '+side:''} (source/manual conflict; presence not established)`);
+
+            // Maternal/clinical condition-based diagnoses
+            if (data.gdmStatus==='positive') {
+                lines.push(`# Infant of diabetic mother`);
             }
-            if(outputStatus(data,'gdmStatus')==='positive') lines.push('# Infant of diabetic mother');
-            if(data.serology?.HBsAg==='+'||data.serology?.HBeAg==='+') lines.push('# Infant of mother with positive HBV serology');
-            if(data.prom?.status==='positive'&&Number.parseFloat(data.prom.duration)>18) lines.push('# Prolonged rupture of membranes');
-            if(outputStatus(data,'gbsStatus')==='positive') lines.push(`# Maternal GBS positive; ${outputIAPText(data)}`);
-            if(document.getElementById('sepsisWorkup')?.checked) lines.push('# Neonatal infection evaluation planned (selected)');
-            const sections=[];
-            const records=getClinicalSourceRecords(data);
-            const source=clinicalSourceText(data,records,['resuscitation','labs','treatment','course','disposition']);
-            if(source) sections.push(`<strong>Additional source records</strong><br>${source}`);
-            const unresolved=[['gbsStatus','Maternal GBS','gbsSource'],['gdmStatus','Maternal GDM','gdmSource'],['preEclampsiaStatus','Maternal preeclampsia','preEclampsiaSource']].filter(([key])=>outputStatus(data,key)==='conflict').map(([key,label,sourceKey])=>outputStatusText(label,outputStatus(data,key),data[sourceKey]||''));
-            if(data.ga==='?'&&data.gaSource) unresolved.push('Gestational-age source: '+data.gaSource);
-            if(data.bw==='?'&&data.bwSource) unresolved.push('Birth-weight source: '+data.bwSource);
-            if(unresolved.length) sections.push(`<strong>Records requiring review</strong><br>${unresolved.map(hlSource).join('<br>')}`);
-            return lines.map(hlSource).join('<br>')+(sections.length?'<br><br>'+sections.join('<br><br>'):'');
+            if (data.serology.HBsAg === '+' || data.serology.HBeAg === '+') {
+                lines.push(`# Infant of HBV carrier mother`);
+            }
+            if (data.prom.present && data.prom.duration && parseFloat(data.prom.duration) > 18) {
+                lines.push(`# Prolonged rupture of membranes`);
+            }
+            if (data.isGbsPositive) {
+                if (data.gbs.includes('complete IAP') && !data.gbs.includes('incomplete') && !/\bIAP\s+(?:pending|unknown|uncertain|not\s+documented)\b/i.test(templateIAPDetail(data))) {
+                    lines.push(`# Maternal GBS positive with adequate intrapartum antibiotic prophylaxis (IAP) completed`);
+                } else if (data.gbs.includes('incomplete')) {
+                    lines.push(`# Maternal GBS positive without adequate intrapartum antibiotic prophylaxis (IAP)`);
+                } else {
+                    lines.push(`# Maternal GBS positive`);
+                }
+            }
+            const nbcT = document.getElementById('nbcTransfer').checked;
+            const nbcR = document.querySelector('input[name="nbcReason"]:checked')?.value;
+            if (nbcT && nbcR === 'jaundice') {
+                if (!peFindings.some(f => f.includes('Jaundice'))) {
+                    lines.push(`# Neonatal jaundice`);
+                }
+            }
+            // Sepsis workup
+            if (document.getElementById('sepsisWorkup').checked) {
+                lines.push(`# Rule out neonatal sepsis`);
+            }
+
+            return lines.map(l => hlSource(l)).join('<br>');
         }
 
         // ============================================================

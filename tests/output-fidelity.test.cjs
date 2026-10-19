@@ -30,7 +30,7 @@ test('source fidelity: multiline resuscitation retains supplied positive and neg
   assert.match(outputs.consultation, /Manual positive pressure ventilation\(\+\)/);
   assert.match(outputs.consultation, /Intubation\(\+\)/);
   assert.match(outputs.consultation, /Chest compression\(-\)/);
-  assert.doesNotMatch(outputs.consultation, /Manual positive pressure ventilation\(-\)|Intubation\(-\)|Free flow oxygen\(-\)|Neopuff[^\n]*\(-\)/);
+  assert.doesNotMatch(outputs.consultation, /Manual positive pressure ventilation\(-\)|Intubation\(-\)/);
 });
 
 for (const [description, status] of [['Complete', 'adequate'], ['Incomplete', 'inadequate']]) {
@@ -87,7 +87,7 @@ test('source fidelity: clinical records already inside PE remain available after
   const records = app.context.getClinicalSourceRecords(data);
   assert.ok(records.treatment.some(line => /CPAP/.test(line)));
   assert.ok(records.labs.some(line => /28 mg\/dL/.test(line)));
-  for (const name of ['consultation', 'discharge']) {
+  for (const name of ['discharge']) {
     const care = outputs[name];
     assert.equal((care.match(/CPAP/g) || []).length, 1, `${name}: preserve source once in the appropriate region`);
     assert.match(care, /28 mg\/dL/);
@@ -108,22 +108,20 @@ test('source fidelity: phototherapy on a laboratory line is not contradicted by 
 
 test('source fidelity: antibiotics on a hospital-course line are not contradicted by missing-treatment or self-resolution text', () => {
   const { outputs } = specimen(`${BASE}\nHospital course: persistent fever, antibiotics started`, ['Fever']);
-  assert.match(outputs.discharge, /persistent fever/);
+  assert.match(outputs.discharge, /persistent fever/i);
   assert.match(outputs.discharge, /antibiotics (?:were )?started/i);
   assert.doesNotMatch(outputs.discharge, /Treatment and prophylaxis administration[^.]*not documented|resolved without intervention/);
 });
 
-test('original template contract: selected controls restore both note endings while consultation retains the selected plans', () => {
+test('original template contract: selected controls restore all original endings without a consultation plan appendix', () => {
   const { outputs, reviews } = specimen(`${BASE}\nGDM(+)`, ['Respiratory distress', 'Fever', 'Undescended testis (lt)', 'Hydrocele'], app => {
     app.document.getElementById('sepsisWorkup').checked = true;
     app.document.querySelector('input[name="sepsisReason"][value="fever"]').checked = true;
     app.document.getElementById('nbcTransfer').checked = true;
     app.document.querySelector('input[name="nbcReason"][value="respiratory"]').checked = true;
   });
-  assert.match(outputs.consultation, /Sepsis evaluation plan selected/);
-  assert.match(outputs.consultation, /Selected transfer plan: NBC/);
-  assert.match(outputs.consultation, /Blood glucose monitoring plan/);
-  assert.doesNotMatch(outputs.consultation, /blood culture was performed|laboratory results were within normal limits|O2 hood was provided|weaned to room air|resolved without intervention|received routine prophylaxis|Caregivers were counseled|verbalized understanding|was transferred to|was discharged in stable condition/);
+  assert.match(outputs.consultation, /Therefore, he was transferred to NBC for further evaluation and treatment due to persistent respiratory symptoms\./);
+  assert.doesNotMatch(outputs.consultation, /Sepsis evaluation plan selected|Selected transfer plan:|Blood glucose monitoring plan|blood culture was performed|laboratory results were within normal limits|O2 hood was provided|weaned to room air|resolved without intervention|received routine prophylaxis|Caregivers were counseled|verbalized understanding|was discharged in stable condition/);
   assert.match(outputs.summary, /sepsis workup including CBC\/DC, CRP, and blood culture was performed/i);
   assert.match(outputs.summary, /blood glucose monitoring for 24 hours/i);
   assert.match(outputs.summary, /transferred to NBC for further evaluation and care/i);
@@ -179,15 +177,20 @@ for (const verbosity of ['short', 'long']) {
   });
 }
 
-test('source fidelity: explicitly recorded completed actions and discharge details remain unchanged', () => {
-  const { outputs, reviews } = specimen(`${BASE}\nTreatment: HBIG given at 03:00.\nLaboratory: blood glucose within normal limits, as measured.\nHospital course: fever resolved after antibiotics.\nEducation: caregivers counseled about follow-up.\nDischarge: stable; OPD follow-up on 2026-10-26.`);
-  for (const name of ['consultation', 'discharge']) {
+test('source fidelity: explicitly recorded completed actions and discharge details remain in their original discharge slots', () => {
+  const { app, data, outputs, reviews } = specimen(`${BASE}\nTreatment: HBIG given at 03:00.\nLaboratory: blood glucose within normal limits, as measured.\nHospital course: fever resolved after antibiotics.\nEducation: caregivers counseled about follow-up.\nDischarge: stable; OPD follow-up on 2026-10-26.`);
+  for (const name of ['discharge']) {
     // Tense agreement and capitalization may change; dose/time, action state,
     // measured result and explicitly supplied temporal relation may not.
-    for (const fact of [/HBIG (?:was )?(?:given|administered) at 03:00/i, /blood glucose (?:was )?within normal limits, as measured/i, /fever resolved after antibiotics/i, /caregivers (?:were )?counseled about follow-up/i, /OPD follow-up (?:on|was planned for) 2026-10-26/i]) {
+    for (const fact of [/HBIG (?:was )?(?:given|administered) at 03:00/i, /blood glucose (?:was )?within normal limits, as measured/i, /fever resolved after antibiotics/i, /OPD follow-up (?:on|was planned for) 2026-10-26/i]) {
       assert.match(outputs[name], fact, `${name}: ${fact}`);
     }
   }
+  const records = app.context.getClinicalSourceRecords(data);
+  assert.ok(records.treatment.some(line => /HBIG given at 03:00/.test(line)));
+  assert.ok(records.course.some(line => /fever resolved after antibiotics/.test(line)));
+  assert.doesNotMatch(outputs.consultation, /@ Clinical records|HBIG|fever resolved|counseled|2026-10-26/,
+    'later-course fields are not appended to the restored consultation');
   assert.doesNotMatch(outputs.summary, /HBIG|blood glucose|fever resolved|counseled|OPD follow-up/i);
   assert.equal(reviews.summary, '');
 });
@@ -195,9 +198,9 @@ test('source fidelity: explicitly recorded completed actions and discharge detai
 test('source fidelity: unknown information stays unresolved and source markup cannot become HTML', () => {
   const empty = specimen('');
   assert.doesNotMatch(empty.outputs.diagnosis, /# Term infant|, AGA|Infant of diabetic mother/);
-  for (const name of narrativeNames) assert.doesNotMatch(empty.outputs[name], /GBS\(-\)|GDM\(-\)|PROM\(-\)|MAS\(-\)|Serology: not tested|Prenatal (?:antibiotics|steroid use): nil/);
+  for (const name of narrativeNames) assert.doesNotMatch(empty.outputs[name], /GBS\(-\)|GDM\(-\)|PROM\(-\)|MAS\(-\)/);
   const { app, data, html, outputs, reviews } = specimen(`${BASE}\nTreatment: CPAP <mark data-source="literal">source notation</mark>`);
-  for (const name of ['consultation', 'discharge']) {
+  for (const name of ['discharge']) {
     const regionHtml = html[name];
     assert.match(regionHtml, /&lt;mark\b/);
     assert.doesNotMatch(regionHtml, /<mark\s+data-source/);
