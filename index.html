@@ -374,6 +374,8 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), delay); };
         }
         const hl = (text) => `<span class="highlight">${text}</span>`;
+        const escapeHtml = (text) => String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const hlSource = (text) => hl(escapeHtml(text));
         const joinOxford = (arr) => arr.length <= 2 ? arr.join(' and ') : arr.slice(0,-1).join(', ') + ', and ' + arr[arr.length-1];
 
         // ============================================================
@@ -536,6 +538,219 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         }
 
         // ============================================================
+        // RECORDED DDH / PHYSICAL EXAMINATION
+        // Keep observations separate from checkbox-driven treatment templates.
+        // A missing or ambiguous result must never be converted to a negative.
+        // ============================================================
+        const ASSESSMENT_FIELDS = {
+            risk: [
+                {name:'breech presentation', re:'\\bbreech(?:\\s+presentation)?\\b|臀位'},
+                {name:'family history of DDH', re:'\\bfamily\\s*(?:hx|history)(?:\\s+of\\s+DDH)?\\b|(?:DDH\\s*)?家族史'},
+                {name:'oligohydramnios', re:'\\boligohydramnios\\b|羊水過少'},
+                {name:'twin pregnancy', re:'\\btwins?(?:\\s+(?:pregnancy|gestation))?\\b|雙胞胎|雙胎'},
+            ],
+            compression: [
+                {name:'torticollis', re:'斜頸|\\btorticollis\\b'},
+                {name:'foot inversion', re:'足踝內翻|\\bfoot\\s+inversion\\b'},
+                {name:'genu recurvatum', re:'膝反曲|膝反屈|\\bgenu\\s+recurvatum\\b'},
+                {name:'asymmetric thigh posture', re:'大腿姿勢不對稱|\\basymmetr(?:ic|ical)\\s+thigh\\s+posture\\b'},
+            ],
+            hip: [
+                {name:"Barlow's test", positive:"positive Barlow's sign", re:"\\bBarlow(?:'s)?\\s*(?:test|sign)?\\b"},
+                {name:"Ortolani's test", positive:"positive Ortolani's sign", re:"\\bOrtolani(?:'s)?\\s*(?:test|sign)?\\b"},
+                {name:'Galeazzi test', positive:'positive Galeazzi sign', re:"\\bGaleazzi(?:'s)?\\s*(?:test|sign)?\\b"},
+                {name:'limitation of hip abduction', re:'\\blimitation\\s+of\\s+(?:hip\\s+)?abduction\\b|\\blimited\\s+(?:hip\\s+)?abduction\\b|髖(?:關節)?外展受限'},
+            ],
+        };
+        function normalizeAssessmentText(text) {
+            return text.normalize('NFKC').replace(/\r\n?/g,'\n').replace(/[’‘]/g,"'").replace(/[−–﹣]/g,'-');
+        }
+        function resultState(value) {
+            const v=value.trim().toLowerCase().replace(/\s/g,'');
+            if(/^(?:\+|positive|pos|present|陽性)$/.test(v)) return 'positive';
+            if(/^(?:-|negative|neg|absent|none|陰性|無|未見)$/.test(v)) return 'negative';
+            return 'unknown';
+        }
+        function parseAssessmentGroup(source, fields) {
+            const records=[], consumed=[];
+            // Alternative observations do not establish either finding as definite.
+            // Track both ends even when a comma or newline separates "or" from a test.
+            const occurrences=fields.flatMap(field=>[...source.matchAll(new RegExp(field.re,'gi'))]).sort((a,b)=>a.index-b.index);
+            const alternatives=new Set();
+            for(let i=1;i<occurrences.length;i++){
+                const left=occurrences[i-1], right=occurrences[i];
+                const gap=source.slice(left.index+left[0].length,right.index);
+                if(!/[;.]/.test(gap)&&/\bor\b|或/i.test(gap)){
+                    alternatives.add(left.index);alternatives.add(right.index);
+                }
+            }
+            const groupMatch=source.trim().match(/^(?:all\s*)?(?:\(([^()]*)\)|(negative|positive|absent|none|無|陰性|陽性))\s*[.]?$/i);
+            const groupState=groupMatch?resultState(groupMatch[1]||groupMatch[2]):null;
+            fields.forEach(field=>{
+                const observations=[];
+                for(const m of source.matchAll(new RegExp(field.re,'gi'))){
+                    const end=m.index+m[0].length;
+                    const after=source.slice(end);
+                    const before=source.slice(0,m.index);
+                    const suffix=after.match(/^[ \t]*(?::|=)?[ \t]*(?:(?:is|was|were|are)[ \t]+)?(?:\(([^()]*)\)|((?:positive|negative|pos|neg|present|absent|equivocal|unknown|not\s+(?:assessed|examined|documented)|uncertain)\b|陽性|陰性|未見|無|[+?±-]))/i);
+                    const prefix=before.match(/(?:^|[\s,;:])((?:(?:not|no)[ \t]+)?(?:positive|negative|present|absent|possible|suspected|equivocal|no|without)(?:[ \t]+for)?|陽性|陰性|未見|無)[ \t]*$/i);
+                    const prefixState=prefix?(/^(?:no|without)$/i.test(prefix[1])?'negative':resultState(prefix[1].replace(/\s+for$/i,''))):null;
+                    let state='unknown', start=m.index, finish=end;
+                    if(suffix){state=resultState(suffix[1]??suffix[2]);finish+=suffix[0].length;}
+                    else if(prefix){state=prefixState;start=before.length-prefix[0].length;}
+                    // Contradictory/negated prefixes are retained for review, never guessed.
+                    if(suffix&&prefix&&prefixState!==state) state='unknown';
+                    const clauseBefore=before.split(/[,;\n.]/).pop();
+                    const clauseAfter=after.split(/[,;\n.]/)[0];
+                    const conditional=/\b(?:if|unless|would|should|could|might|possible|suspected|cannot|neither|denies)\b|\brule\s+out\b|\br\/o\b|疑似|若|假如/i;
+                    const sharedNegation=/\b(?:no|not|without|negative\s+for)\b[^,;\n]*\b(?:and|or)\b/i;
+                    if(conditional.test(clauseBefore+' '+clauseAfter)||sharedNegation.test(clauseBefore)) state='unknown';
+                    const alternativeClause=before.split(/[;\n.]/).pop()+' '+after.split(/[;\n.]/)[0];
+                    if(alternatives.has(m.index)||/\b(?:either|or)\b|或/i.test(alternativeClause)) state='unknown';
+                    observations.push(state);
+                    consumed.push([start,finish]);
+                }
+                if(observations.length){
+                    const states=[...new Set(observations)];
+                    const state=states.length===1?states[0]:'conflict';
+                    records.push({...field,state});
+                }
+            });
+            let residue=source;
+            // Mask spans without changing offsets, including overlapping matches.
+            const chars=source.split('');
+            consumed.forEach(([start,end])=>{for(let i=start;i<end;i++) chars[i]=' ';});
+            residue=chars.join('').replace(/\band\b/gi,'').replace(/[\s,;:.()\[\]/*-]/g,'');
+            const contradictoryGroup=!!groupState&&records.some(r=>r.state!==groupState);
+            const requiresReview=groupState==='unknown'||records.some(r=>r.state==='unknown'||r.state==='conflict')||contradictoryGroup||(!groupMatch&&residue.length>0);
+            return {source:source.trim(),records,groupState,requiresReview};
+        }
+        function parseRecordedAssessments(text) {
+            const normalized=normalizeAssessmentText(text);
+            const sections={risk:[],compression:[],hip:[],pe:[]};
+            const headers=[
+                ['risk',/^(?:DDH\s*risk(?:\s*factors?)?|DDH\s*風險(?:因子|因素)?)(?:[ \t]*:[ \t]*|[ \t]+|(?=\()|$)/i],
+                ['compression',/^(?:子宮內壓迫(?:徵象|徵像|表現)?|intrauterine\s*(?:compression|constraint)(?:\s*(?:signs?|findings?))?)(?:[ \t]*:[ \t]*|[ \t]+|(?=\()|$)/i],
+                ['hip',/^(?:DDH\s*(?:PE|physical\s*exam(?:ination)?)|hip\s*(?:PE|exam(?:ination)?|screening)|髖(?:關節)?(?:理學)?檢查)\s*(?::\s*|$)/i],
+                ['pe',/^(?:P\.?E\.?|physical\s*exam(?:ination)?|理學檢查|身體檢查)\s*(?::\s*|$)/i],
+            ];
+            const boundary=/^(?:(?:plan|assessment|impression|diagnosis|diagnoses|maternal|prenatal|postnatal|delivery|birth|newborn|admission|discharge|history|feeding|medication|treatment|APGAR|GA|BW|GBS|GDM|PROM|MAS|serology)\b|處置|診斷|病史|母親|產前|餵食|治療)/i;
+            const excludedHeader=/^(?:(?:plan|assessment|impression|diagnosis|diagnoses|maternal|prenatal|history|feeding|medication|treatment)\b|處置|診斷|病史|母親|產前|餵食|治療)/i;
+            const newbornHeader=/^(?:APGAR|GA|BW|birth|newborn|delivery|postnatal)\b/i;
+            const inlineHeader=/(?:;[ \t]*|[ \t]+)(?=(?:DDH\s*(?:risk|PE)|Hip\s*PE|子宮內壓迫|(?:PE|physical\s*exam(?:ination)?|Plan|Assessment|Impression|Diagnosis|Maternal(?:\s+(?:condition|history))?|Prenatal|History|Treatment|Medication|處置|診斷|病史|母親|產前|治療)\s*:))/gi;
+            const splitText=normalized.replace(inlineHeader,(separator,offset)=>/\b(?:Hip|DDH)$/i.test(normalized.slice(0,offset))?separator:'\n');
+            let active=null, excluded=false;
+            for(const originalLine of splitText.split('\n')){
+                const line=originalLine.trim().replace(/^(?:[@#*•-]|\d+[.)])[ \t]+/,'');
+                if(!line) continue;
+                let headerFound=false;
+                for(const [key,re] of headers){
+                    const match=line.match(re);
+                    if(match){active=key;excluded=false;sections[key].push(line.slice(match[0].length));headerFound=true;break;}
+                }
+                if(headerFound) continue;
+                // "Newborn reflexes" is an examination subsection, while newborn
+                // history, condition and resuscitation remain section boundaries.
+                const peSubheading=active==='pe'&&/^newborn\s+reflex(?:es)?\b/i.test(line);
+                if(boundary.test(line)&&!peSubheading){active=null;if(excludedHeader.test(line))excluded=true;else if(newbornHeader.test(line))excluded=false;continue;}
+                if(excluded) continue;
+                const hasHip=ASSESSMENT_FIELDS.hip.some(f=>new RegExp(f.re,'i').test(line));
+                if(hasHip&&(active==='risk'||active==='compression')&&!ASSESSMENT_FIELDS[active].some(f=>new RegExp(f.re,'i').test(line))){active='hip';sections.hip.push(line);continue;}
+                if(active){sections[active].push(line);continue;}
+                // Standalone hip-test rows in the original nursery format.
+                if(hasHip) sections.hip.push(line);
+            }
+            const sourcePE=sections.pe.join('\n').trim();
+            const sourceHasHip=ASSESSMENT_FIELDS.hip.some(f=>new RegExp(f.re,'i').test(sourcePE));
+            const hipSource=[...sections.hip,sourceHasHip?sourcePE:''].filter(Boolean).join('\n');
+            const assessment={
+                risk:parseAssessmentGroup(sections.risk.join('\n'),ASSESSMENT_FIELDS.risk),
+                compression:parseAssessmentGroup(sections.compression.join('\n'),ASSESSMENT_FIELDS.compression),
+                hip:parseAssessmentGroup(hipSource,ASSESSMENT_FIELDS.hip),
+            };
+            // Preserve unstructured PE once, with all grades, sides and qualifiers.
+            // If PE consists entirely of known hip tests, use their structured results.
+            const peHip=parseAssessmentGroup(sourcePE,ASSESSMENT_FIELDS.hip);
+            const peIsHipOnly=!!sourcePE&&peHip.records.length>0&&!peHip.requiresReview;
+            assessment.hip.renderSource=sections.hip.join('\n').trim();
+            assessment.hip.coveredByPE=sourceHasHip&&!peIsHipOnly&&sections.hip.length===0;
+            const positives=group=>group.records.filter(r=>r.state==='positive').map(r=>r.positive||r.name);
+            return {
+                ddhRisk:positives(assessment.risk),
+                compressionSigns:positives(assessment.compression),
+                ddhPe:positives(assessment.hip),
+                recordedAssessment:assessment,
+                sourcePE:peIsHipOnly?'':sourcePE,
+            };
+        }
+        function generateRecordedAssessment(data, peFindings=[]) {
+            const parts=[], assessment=data.recordedAssessment;
+            if(!assessment) return '';
+            const labels={risk:'DDH risk screening',compression:'Intrauterine compression screening',hip:'Hip examination'};
+            for(const [key,group] of Object.entries(assessment)){
+                if(!group.source||(key==='hip'&&group.coveredByPE)) continue;
+                const label=labels[key];
+                if(group.requiresReview){
+                    // Preserve the source when a result or qualifying detail cannot be
+                    // represented faithfully; never silently discard it.
+                    const source=key==='hip'&&data.sourcePE?group.renderSource:group.source;
+                    if(source)parts.push(`${label}, as recorded: ${hlSource(source)}.`);
+                    continue;
+                }
+                if(group.groupState){parts.push(`${label} was explicitly documented as ${hlSource(group.groupState)}.`);continue;}
+                const pos=group.records.filter(r=>r.state==='positive').map(r=>r.positive||r.name);
+                const neg=group.records.filter(r=>r.state==='negative').map(r=>r.name);
+                const positiveLead={risk:'Documented DDH risk factors included',compression:'Documented intrauterine compression signs included',hip:'Hip examination documented'}[key];
+                if(pos.length) parts.push(`${positiveLead} ${joinOxford(pos.map(hlSource))}.`);
+                if(neg.length) parts.push(`${label} was documented as negative for ${joinOxford(neg.map(hlSource))}.`);
+            }
+            if(data.sourcePE) parts.push(`Recorded physical examination: ${hlSource(data.sourcePE)}.`);
+            const conflicts=collectPEConflicts(data,peFindings);
+            if(conflicts.length) parts.push(`${hlSource('PE source conflict: '+joinOxford(conflicts))}. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection.`);
+            return parts.join(' ');
+        }
+        function collectPEConflicts(data, peFindings=[]) {
+            if(!data.sourcePE) return [];
+            // A comma normally separates PE observations. Keep an explicit
+            // continuation such as ", or unknown" with its original finding.
+            const observations=data.sourcePE.split(/[,;\n](?![ \t]*(?:or\b|或))/i);
+            const sideKey=side=>/^(?:left|lt)$/i.test(side)?'left':/^(?:right|rt)$/i.test(side)?'right':'bilateral';
+            return peFindings.filter(finding=>{
+                // Compare the named finding, retaining the original manual detail
+                // in the warning. An unchecked control never means a negative exam.
+                const name=finding.replace(/\s*\([^)]*\)/g,'').trim();
+                const literal=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/\s+/g,'\\s+');
+                const field={name,re:'\\b'+literal+'\\b'};
+                const manualSide=finding.match(/\((lt|rt|left|right|bilateral)\)/i)?.[1];
+                return observations.some(observation=>{
+                    let scoped=observation;
+                    if(manualSide){
+                        const chars=observation.split('');
+                        for(const match of observation.matchAll(new RegExp(field.re,'gi'))){
+                            const before=observation.slice(0,match.index), after=observation.slice(match.index+match[0].length);
+                            const sourceSide=before.match(/\b(left|right|lt|rt|bilateral|both)(?:[- ]sided)?\s*$/i)?.[1]
+                                ||after.match(/^\s*(?:\((?:[+-]|negative|positive)\)\s*)?(?:on\s+(?:the\s+)?)?\(?\s*(left|right|lt|rt|bilateral|both)\b/i)?.[1];
+                            if(sourceSide&&sideKey(manualSide)!=='bilateral'&&sideKey(sourceSide)!=='bilateral'&&sideKey(manualSide)!==sideKey(sourceSide)){
+                                // Mask an explicitly different-side occurrence so it
+                                // cannot become a conflict for this manual selection.
+                                for(let i=match.index;i<match.index+match[0].length;i++)chars[i]=' ';
+                            }
+                        }
+                        scoped=chars.join('');
+                    }
+                    const result=parseAssessmentGroup(scoped,[field]);
+                    return result.records.some(record=>record.state==='negative'||record.state==='conflict');
+                });
+            });
+        }
+        function alreadyRecordedPE(data, finding) {
+            if(!data.sourcePE||finding.includes('(')) return false;
+            const literal=finding.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+            const result=parseAssessmentGroup(data.sourcePE,[{name:finding,re:literal}]);
+            return result.records.some(record=>record.state==='positive');
+        }
+
+        // ============================================================
         // MAIN PARSER
         // ============================================================
         function parseInputData(text) {
@@ -559,21 +774,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             data.gdm=parseGDM(lines,text); data.bloodGroup=parseBloodGroup(lines);
             data.preEclampsia=!!text.match(/Pre-?eclampsia\s*(\(\+\)|positive|\+)/i);
             data.serology=parseSerology(text); data.masIsAbsent=parseMAS(lines);
-            const ddhLine=findLine('DDH risk factors'); data.ddhRisk=[];
-            if(ddhLine.includes('Breech(+)')) data.ddhRisk.push('breech presentation');
-            if(ddhLine.includes('Family Hx (+)')) data.ddhRisk.push('family history of DDH');
-            if(ddhLine.includes('Oligohydramnios(+)')) data.ddhRisk.push('oligohydramnios');
-            if(ddhLine.includes('Twins(+)')) data.ddhRisk.push('twin pregnancy');
-            const compLine=findLine('子宮內壓迫徵象'); data.compressionSigns=[];
-            if(compLine.includes('斜頸(+)')) data.compressionSigns.push('torticollis');
-            if(compLine.includes('足踝內翻(+)')) data.compressionSigns.push('foot inversion');
-            if(compLine.includes('膝反曲(+)')) data.compressionSigns.push('genu recurvatum');
-            if(compLine.includes('大腿姿勢不對稱(+)')) data.compressionSigns.push('asymmetric thigh posture');
-            data.ddhPe=[];
-            if(text.match(/Barlow(?:\'s)?\s*(?:test)?\s*\(\+\)/i)) data.ddhPe.push("positive Barlow's sign");
-            if(text.match(/Ortolani(?:\'s)?\s*(?:test)?\s*\(\+\)/i)) data.ddhPe.push("positive Ortolani's sign");
-            if(text.match(/Galeazzi(?:\'s)?\s*(?:test)?\s*\(\+\)/i)) data.ddhPe.push("positive Galeazzi sign");
-            if(text.match(/Limitation of abduction\s*\(\+\)/i)) data.ddhPe.push("limitation of hip abduction");
+            Object.assign(data,parseRecordedAssessments(text));
             const gaV=parseInt(data.ga)||40;
             data.isHighRiskForHypoglycemia=gaV<37||data.aga==='SGA'||data.aga==='LGA'||!data.gdm.includes('No GDM');
             data.selectedGender=document.querySelector('input[name="gender"]:checked')?.value||'female';
@@ -652,21 +853,12 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             let apStr=`APGAR scores were ${hl(apS[0]||'?')} and ${hl(apS[1]||'?')} at 1 and 5 minutes, respectively.`;
             let peDP=[];
             if(hasRD){const rf=peFindings.find(f=>f.includes('Respiratory distress'));let sy=[];if(rf?.includes('nasal flaring'))sy.push('nasal flaring');if(rf?.includes('retraction'))sy.push('retractions');let rd='respiratory distress';if(sy.length>0)rd+=` with ${sy.join(' and ')}`;peDP.push(`the infant exhibited ${hl(rd)}`);}
-            const otherPE=peFindings.filter(f=>!f.includes('Respiratory distress'));
+            const otherPE=peFindings.filter(f=>!f.includes('Respiratory distress')&&!alreadyRecordedPE(data,f));
             if(otherPE.length>0){const list=otherPE.map(f=>hl(f)).join(', ').replace(/,([^,]*)$/,' and$1');peDP.push(`${list} ${otherPE.length===1?'was':'were'} noted`);}
-            let mskF=[];
-            if(data.ddhPe?.length>0) mskF.push(...data.ddhPe.map(f=>hl(f)));
-            else if(peFindings.some(f=>f.includes('DDH suspect'))) mskF.push(hl('suspected DDH on examination'));
-            if(data.compressionSigns?.length>0) mskF.push(...data.compressionSigns.map(f=>hl(f)));
-            if(mskF.length>0) peDP.push(`musculoskeletal examination was notable for ${mskF.join(', ')}`);
-            let ddhNeg='';
-            const ddhSuspectInPE=peFindings.some(f=>f.includes('DDH suspect'));
-            const ddhPeAllAdm=[...(data.ddhPe||[])];
-            if(ddhSuspectInPE&&ddhPeAllAdm.length===0) ddhPeAllAdm.push('suspected DDH on examination');
-            if(!data.ddhRisk?.length&&!data.compressionSigns?.length&&!ddhPeAllAdm.length) ddhNeg='Screening for DDH risk factors and physical signs was negative.';
-            else if(data.ddhRisk?.length>0){const rL=data.ddhRisk.map(f=>hl(f)).join(', ');if(mskF.length===0&&!ddhPeAllAdm.length)peDP.push(`DDH screening noted risk factors including ${rL}, but physical signs were negative`);else peDP.push(`DDH risk factors including ${rL} were identified`);}
-            let peStr=peDP.length>0?`On physical examination, ${peDP.join('. ')}.`:'Physical examination revealed no gross anomalies.';
-            if(ddhNeg) peStr+=` ${ddhNeg}`;
+            const recorded=generateRecordedAssessment(data,peFindings);
+            let peStr=peDP.length>0?`On physical examination, ${peDP.join('. ')}.`:'';
+            if(recorded) peStr+=(peStr?' ':'')+recorded;
+            if(!peStr) peStr='Physical examination findings were not documented in the supplied text.';
 
             // Sepsis workup sentence for admission summary
             let sepsisStr='';
@@ -716,7 +908,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             }
 
             // Respiration
-            let respText='Normal';
+            let respText=data.sourcePE?'See recorded physical examination below.':'Not documented';
             if(peFindings.some(f=>f.includes('Respiratory distress'))){
                 const rf=peFindings.find(f=>f.includes('Respiratory distress'));
                 let sy=[];
@@ -762,16 +954,18 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             // PE findings - show ALL
             const hasHypotonia=peFindings.some(f=>f.includes('Hypotonia'));
             const hasCyanosis=peFindings.some(f=>f.includes('Cyanosis'));
-            const cy=hasCyanosis?hl('General cyanosis'):hl('No cyanosis');
+            const cy=hasCyanosis?hl('General cyanosis'):(data.sourcePE?'Cyanosis: see recorded physical examination':'Cyanosis status not documented');
 
             // Other PE findings (excluding the ones already handled inline)
             const handledPE=['Respiratory distress','Hypotonia','Cyanosis'];
-            const otherFindings=peFindings.filter(f=>!handledPE.some(h=>f.includes(h)));
+            const otherFindings=peFindings.filter(f=>!handledPE.some(h=>f.includes(h))&&!alreadyRecordedPE(data,f));
             let peSection='';
             if(otherFindings.length>0){
                 const fList=otherFindings.map(f=>f.toLowerCase());
                 peSection=`\n${His} physical examination was also notable for ${hl(joinOxford(fList))}.`;
             }
+            const recorded=generateRecordedAssessment(data,peFindings);
+            if(recorded) peSection+=`\n${recorded}`;
 
             // Disposition - BR vs NBC
             const nbcT=document.getElementById('nbcTransfer').checked;
@@ -798,7 +992,7 @@ ${abx}
 
 @ Newborn's condition: GA ${hl(data.ga)} weeks, BW ${hl(data.bw)} gm, ${hl(data.aga)}, ${hl(data.selectedGender)} neonate, born via ${hl(dmText)}
 Apgar score: ${hl(apS[0]||'?')} (1分鐘) to ${hl(apS[1]||'?')} (5分鐘).
-Activity: ${hasHypotonia?hl('not doing well'):'fair'}. Muscle tone: ${hasHypotonia?hl('decreased'):'normal'}. ${cy}.
+Activity: ${hasHypotonia?hl('not doing well'):'not documented'}. Muscle tone: ${hasHypotonia?hl('decreased'):(data.sourcePE?'see recorded physical examination':'not documented')}. ${cy}.
 Respiration: ${respText}${peSection}
 
 High risk neonatal critical care:
@@ -845,25 +1039,13 @@ ${disposition}`;
                 cc.push(`Due to the presence of ${hl(dx)}, head circumference was monitored ${hl(CAMPUS.hcMonitor.dischargeSentence)}. ${hl('No significant interval increase was observed')}.`);
             }
             if(peFindings.some(f=>f.includes('Fever'))) cc.push(`The infant developed ${hl('fever')} during the hospital course, which ${hl('resolved without intervention')}.`);
-            // DDH — three-branch logic with DDH suspect fallback
-            const hasRiskFactors=data.ddhRisk?.length>0||data.compressionSigns?.length>0;
-            const ddhSuspectChecked=peFindings.some(f=>f.includes('DDH suspect'));
-            const ddhPeAll=[...(data.ddhPe||[])];
-            if(ddhSuspectChecked&&ddhPeAll.length===0) ddhPeAll.push('suspected DDH on examination');
-            const hasDdhPePos=ddhPeAll.length>0;
-            if(hasRiskFactors||hasDdhPePos){
-                const allRF=[...(data.ddhRisk||[]),...(data.compressionSigns||[])];
-                const rfStr=allRF.length>0?joinOxford(allRF.map(f=>hl(f))):'';
-                if(hasRiskFactors&&hasDdhPePos){
-                    const peStr=joinOxford(ddhPeAll.map(f=>hl(f)));
-                    cc.push(`Due to identified DDH risk factors including ${rfStr}, as well as ${peStr}, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
-                } else if(hasDdhPePos){
-                    const peStr=joinOxford(ddhPeAll.map(f=>hl(f)));
-                    cc.push(`Due to ${peStr} on physical examination, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
-                } else if(allRF.length>0){
-                    cc.push(`Due to identified DDH risk factors including ${rfStr}, DDH screening was performed; however, ${hl('physical examination of the hips was unremarkable')}.`);
-                }
-            }
+            // The supplied screening record establishes findings, not completed
+            // treatment, a normal hip exam, or an already-arranged follow-up visit.
+            const recorded=generateRecordedAssessment(data,peFindings);
+            if(recorded) cc.push(recorded);
+            const coursePE=['Respiratory distress','Fever','Undescended testis','Hydrocele'];
+            const otherPE=peFindings.filter(f=>!coursePE.some(key=>f.includes(key))&&!alreadyRecordedPE(data,f));
+            if(otherPE.length) cc.push(`Physical examination documented ${joinOxford(otherPE.map(hlSource))}.`);
             if(data.isHighRiskForHypoglycemia) cc.push(hl("Blood glucose levels were monitored per protocol and remained within normal limits."));
             // UDT education
             const verb=getVerbosity();
@@ -977,13 +1159,15 @@ ${disposition}`;
                 lines.push(`# Rule out neonatal sepsis`);
             }
 
-            return lines.map(l => hl(l)).join('<br>');
+            const recorded=generateRecordedAssessment(data,peFindings);
+            const observed=recorded?`<br><br><strong>Risk factors and examination findings</strong><br>${recorded}`:'';
+            return lines.map(l => hl(l)).join('<br>')+observed;
         }
 
         // ============================================================
         // PARSE STATUS BAR
         // ============================================================
-        function updateParseStatus(data) {
+        function updateParseStatus(data, peFindings=[]) {
             if(!data){DOM.parseStatus.innerHTML='';return;}
             const fields=[
                 {label:'GA',val:data.ga,ok:data.ga!=='?'},
@@ -996,6 +1180,18 @@ ${disposition}`;
                 {label:'GDM',val:data.gdm.includes('No')?'-':'+',ok:true},
                 {label:'PROM',val:data.prom.present?`+${data.prom.duration}h`:'-',ok:true},
             ];
+            const assessment=data.recordedAssessment;
+            if(assessment){
+                for(const [key,label] of [['risk','DDH risk'],['compression','子宮內壓迫'],['hip','Hip PE']]){
+                    const group=assessment[key], count=group.records.filter(r=>r.state==='positive').length;
+                    const val=!group.source?'未記錄':group.requiresReview?'原文已保留，請核對':count?`${count} 項陽性`:group.groupState==='negative'||group.records.length?'已記錄結果':'請核對';
+                    fields.push({label,val,ok:!!group.source&&!group.requiresReview});
+                }
+                if(data.sourcePE){
+                    const conflicts=collectPEConflicts(data,peFindings);
+                    fields.push({label:'PE',val:conflicts.length?'原文與手動勾選衝突，請核對':'原文已保留',ok:conflicts.length===0});
+                }
+            }
             DOM.parseStatus.innerHTML=fields.map(f=>`<span class="parse-badge ${f.ok?'parse-ok':'parse-warn'}">${f.label}: ${f.val} ${f.ok?'✓':'⚠'}</span>`).join('');
         }
 
@@ -1032,7 +1228,7 @@ ${disposition}`;
                 DOM.consultOutput.innerHTML=generateConsultation(pd,pe);
                 DOM.dischargeOutput.innerHTML=generateDischargeSummary(pd,pe);
                 DOM.diagnosisOutput.innerHTML=generateDiagnosis(pd,pe);
-                updateParseStatus(pd);
+                updateParseStatus(pd,pe);
             }catch(e){
                 console.error("Parse error:",e);
                 const msg='<span class="text-red-400">資料格式無法解析，請檢查輸入。</span>';
