@@ -4,6 +4,17 @@ Mackay Memorial Hospital · BR Admission Summary & Consultation Form Generator
 
 Single-page client-side tool: 貼入產房原始紀錄 → 即時生成診斷、入院摘要、會診單、出院摘要。
 
+## 核心欄位與病程轉寫（2026-10-19 後續修正）
+
+- GBS、GDM、PROM、MAS、preeclampsia 與 serology 依各自欄位旁的結果判讀，分清陽性、陰性、未記錄／不明及衝突。同一行其他欄位的 `+`／`-` 不會互相覆蓋。
+- 母親與嬰兒的血型、篩檢結果依明示主詞或段落區分；保留未標示 maternal 的既有篩檢格式。原文結果不明時保留原文，供核對。
+- GA 支援 `36+6`、`36w6d`、`36 6/7 weeks`；BW 支援 `3.2 kg`、`3,200 gm`；PROM 支援小數與日／時／分換算。缺 GA 或生長分類時不再自動補成 Term／AGA。
+- IAP 的「有記載」、「充分」、「不充分」分開處理，支援分行記錄。單純 `s/p IAP` 不再變成充分完成，原文的藥名、劑量等細節仍保留。
+- 產前用藥、復甦、檢驗、治療、預防處置、病程與去向依原文輸出；保留數值、否定、待執行或拒絕狀態。不由風險或 PE 勾選產生「已做檢查」、「結果正常」、「已接種」、「症狀消失」等敘述。
+- Sepsis／NBC 勾選、血糖與兩院區 HC 監測條件產生明確標示的計畫。實際執行、結果、衛教完成與出院狀態由提供的臨床紀錄決定。手動 Respiratory distress 會列入診斷，不推定病因。
+- 換貼資料會撤回舊的自動感染評估建議，再依目前資料重算。手動 PE、評估及性別選擇在編輯時保留，按 Reset 才一併清除。
+- 未記載嬰兒性別時不再預設女性；空白輸入不會拿 placeholder 範例生成個案。Reset 後尚在排程中的輸入更新也不會恢復範例或舊輸出。
+
 ## DDH 與 PE 紀錄轉寫（2026-10-19 修正）
 
 - DDH risk、子宮內壓迫徵象及 hip PE 支援空白、換行、大小寫與全形符號，例如 `Oligohydramnios (+)`、`大腿姿勢不對稱（＋）`。
@@ -21,17 +32,16 @@ Single-page client-side tool: 貼入產房原始紀錄 → 即時生成診斷、
 不需要安裝套件，在 repo 根目錄執行：
 
 ```bash
-node tests/recorded-assessment.test.cjs
-node tests/recorded-assessment-followup.test.cjs
+node --test --test-isolation=none tests/*.test.cjs
 ```
 
 測試使用 Node 內建 `node:test`／`vm` 與最小 DOM，載入真正的 HTML application script。案例均為合成資料，涵蓋各輸出、清除重填、段落邊界與兩院區 HC 設定。這是程式功能驗證；未代替正式站瀏覽器驗收。
 
 ### 驗證範圍
 
-本次修正聚焦 DDH／PE 紀錄的保留與語意。先前驗收發現的 GBS／GDM／PROM 解析、GA／BW 格式、固定處置及正常結果模板、換貼資料後自動感染評估勾選殘留，仍需後續修正。DDH／PE 測試通過不代表整份摘要的所有欄位均已通過驗收。
+測試包含既有 DDH／PE 回歸、先前驗收的 15 組核心問題、8 個病程輸出案例及 2 個 UI 案例，以及欄位解析、來源細節與事件狀態的補充回歸。詳見 `tests/README.md`。通過結果只涵蓋列出的合成案例與程式行為，並不涵蓋任意自由文字格式。
 
-候選版本的實際瀏覽器驗收尚未完成：測試瀏覽器的網址安全政策阻擋本機 HTML。正式站的舊版本操作檢查不能替代候選版；手機及 iOS Safari 尚未驗證。
+DDH／PE 的 PR #1 已合併並成功部署，正式站四個分頁的原文保留、衝突提示、複製及 Reset 已完成瀏覽器操作檢查。這次後續修正的候選版仍以實際 HTML script 的邏輯驗證為主；測試瀏覽器阻擋本機 HTML，故候選版的版面／剪貼簿，以及手機及 iOS Safari 尚未驗證。
 
 ## 多院區 — URL 參數切換
 

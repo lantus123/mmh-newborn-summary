@@ -1,4 +1,4 @@
-# Recorded DDH and PE regression tests
+# Newborn record regression and acceptance tests
 
 All fixtures are synthetic. No patient data or external dependencies are used.
 The tests run the final inline application script from `index.html` in a fresh
@@ -47,15 +47,63 @@ MMH_TEST_APP_PATH=/absolute/path/to/baseline-index.html node tests/recorded-asse
 - Conflict warnings are derived from the current source and manual selection,
   including clearing after edits, unchecking, and Reset. Unchecked controls do
   not establish negative observations.
+- Independent maternal screening values, mother/infant subject boundaries,
+  explicit unknown/conflicting results, and IAP adequacy versus mere receipt.
+- GA weeks/days, gram/kilogram birth weights, decimal PROM durations and units,
+  and missing data without invented Term/AGA, delivery mode, or newborn sex.
+- Source medication details, resuscitation, abnormal measurements, treatment,
+  prophylaxis pending/declined states, and persistent symptoms.
+- Clinical plans are distinct from completed investigations, normal results,
+  administered medicines, recovery, completed counseling, and discharge.
+- Automatic sepsis suggestions are recomputed on source changes. Manual
+  choices remain during editing and are cleared by Reset. Empty input never
+  renders placeholder example data, including after an already queued update.
+
+## Test files
+
+| File | Purpose |
+| --- | --- |
+| `recorded-assessment.test.cjs` | Original 24 DDH/PE regression cases |
+| `recorded-assessment-followup.test.cjs` | 12 DDH/PE review follow-ups across four tabs and bound events |
+| `core-state-acceptance.test.cjs` | Original 15 core acceptance groups, containing 22 specimens |
+| `recorded-course-acceptance.test.cjs` | Original 8 output and 2 UI acceptance cases |
+| `core-parsers.test.cjs` | 34 parser status, subject, unit, and source-detail regressions |
+| `input-state.test.cjs` | 7 automatic/manual state, empty input, sex selection, and queued Reset cases |
+| `output-fidelity.test.cjs` | 16 source-fidelity and clinical-course cases |
+
+The two acceptance adapters preserve the original synthetic inputs and desired
+checks. One inconsistent **test prerequisite**, in UI-02, was corrected: the
+old Reset setup required a sentence claiming a blood culture had been
+performed merely because PROM selected a checkbox, while OUT-04 explicitly
+forbids that claim. UI-02 now verifies the actual automatic checkbox/reason and
+loaded DDH/PE records. All post-Reset requirements are unchanged. This correction
+is not counted as a product fix.
+
+## Broader follow-up verification (2026-10-19)
+
+All **125 tests pass** with no failures or skips against the integrated candidate.
+The tested `index.html` SHA-256 is
+`f5a387435441c91a14ee89d63b2bbfca5f5a840bf2bbbd1639f1a2f2c869cbf9`.
+The shared DDH/PE parser and rendering section is unchanged from merged PR #1.
+
+Independent full-output review additionally found and verified fixes for:
+
+- `GDM(+) under diet control, no insulin`: insulin is not added to the
+  affirmative treatment list; explicit multi-treatment and dose controls remain.
+- Treatment recorded within laboratory or hospital-course text: phototherapy
+  and antibiotics remain in the output without a contradictory assertion that
+  treatment was not documented merely because no separate treatment heading exists.
 
 This is a logic regression suite. It does not replace real-browser checks for
 layout, clipboard permissions, event timing, or hosted deployment behavior.
-The candidate HTML could not be opened in the test browser because its URL
-policy blocks local files; mobile/iOS Safari checks remain unperformed.
-Known failures in the maternal/birth parsers and non-DDH/PE course templates are
-outside this focused regression suite and are not certified by these passes.
+The broader candidate HTML could not be opened in the test browser because its
+URL policy blocks local files; its browser layout, clipboard behavior, and
+mobile/iOS Safari checks remain unperformed. The merged DDH/PE version from
+PR #1 was separately checked on the deployed website: four-tab source retention,
+conflict messaging, Copy, and Reset worked. That production check is evidence
+for PR #1 and does not substitute for a browser check of this broader candidate.
 
-## Follow-up verification (2026-10-19)
+## Earlier DDH/PE follow-up verification (2026-10-19, PR #1)
 
 The original 24 tests and 12 follow-up tests pass (36 total). The separate eight
 acceptance probes that previously exposed the three DDH/PE gaps also pass.
