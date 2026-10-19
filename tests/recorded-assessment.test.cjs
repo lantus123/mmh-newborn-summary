@@ -315,10 +315,19 @@ test('an inline Plan header terminates an inline PE block', () => {
 test('compound Hip PE and DDH PE headings preserve the scope of a group-level negative', () => {
   for (const heading of ['Hip PE', 'DDH PE']) {
     const app = loadApp();
-    const outputs = app.render(app.parse(`${BASE}\n${heading}: negative`));
+    const data = app.parse(`${BASE}\n${heading}: negative`);
+    assert.equal(data.recordedAssessment.hip.groupState, 'negative', `${heading}: the parsed negative remains hip-specific`);
+    assert.equal(data.recordedAssessment.risk.groupState, null, `${heading}: a hip result does not establish the unprovided risk screen`);
+    assert.equal(data.sourcePE, '', `${heading}: a hip-only negative is not parsed as a general physical-exam negative`);
+    const outputs = app.render(data);
+    assert.match(toText(outputs.consultation), /(?:hip|DDH)[^.\n]*negative/i,
+      `${heading}/consultation: the source remains available as a hip-specific negative`);
+    // The requested compact admission/discharge may omit an isolated ordinary
+    // hip-negative item; omission must not create a broader normal examination.
     narrativeAssertions(outputs, (text, name) => {
-      assert.match(text, /(?:hip|DDH)[^.\n]*negative/i, `${heading}/${name}: the documented negative remains hip-specific`);
       assert.doesNotMatch(text, /Recorded physical examination:\s*negative/i, `${heading}/${name}: a hip-only negative is not a general physical-exam negative`);
+      assert.doesNotMatch(text, /Screening for DDH risk factors and physical signs was negative|Physical examination revealed no gross anomalies/i,
+        `${heading}/${name}: a hip-only negative cannot establish a complete DDH screen or general normal PE`);
     });
   }
 });

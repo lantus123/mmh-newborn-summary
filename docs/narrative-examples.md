@@ -1,14 +1,12 @@
-# BR 入摘、出摘恢復原版：完整合成驗收範例
+# HIV 與 DDH：原版句型及完整合成範例
 
-依使用者要求，入摘恢復原版一段式語序與入 Baby Room 結尾，出摘維持原版照護模板；診斷移除下方新增的 risk factor 區塊。重點是原始資料有 finding 時正確顯示，保留既有解析修正。
+依使用者要求，非明確陽性的 HIV 不輸出；入摘、出摘的 DDH 回到原版簡短句型，僅在實際 finding 或必要限定內容存在時補充。診斷仍無 risk factor 附錄。
 
-以下全部為合成資料及程式實際產生的全文。AS-01 明示正常／陰性以對照原版入摘全文；六組出摘另與 PR #4 完整輸出逐字比較一致。入摘與出摘的額外待確認清單均已移除。
+以下均為合成輸入與實際程式輸出。HD-01 入摘與整輪修改前原版全文一致，唯一文字差異是依要求移除陰性清單中的 HIV；HD-02 出摘 DDH 句與原版逐字一致。其他案例驗證缺值、異常與已記錄的追蹤狀態。
 
-`index.html` SHA-256：`8478678ecb01a088eb1ddede9c43ce083c961c756cf9b75f579b32ede00eb5b9`
+`index.html` SHA-256：`459fb2f9f7ad4397168fae991fe448890f9e7620ee69d93e15a04a48b08c74ad`
 
-## AS-01：完整明示正常的原版入摘
-
-完整明示正常／陰性，與整輪修改前的入摘全文比較；不利用漏填資料來要求產生陰性。
+## HD-01：明示正常：HIV 陰性省略、DDH 回到原單句
 
 ### 合成輸入
 
@@ -29,33 +27,88 @@ DDH risk factors: negative
 Hip PE: negative
 ```
 
-手動 PE：無。Sepsis 評估：未勾選。
+### 入院摘要
 
-### 原版入摘
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Physical examination revealed no gross anomalies. Screening for DDH risk factors and physical signs was negative. The infant was admitted to the Baby Room for routine newborn care.
 
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Physical examination revealed no gross anomalies. Screening for DDH risk factors and physical signs was negative. The infant was admitted to the Baby Room for routine newborn care.
+### 出院摘要
 
-與本版入摘全文一致（僅忽略 HTML 顯示空白）。
-
-### 本版入院摘要
-
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Physical examination revealed no gross anomalies. Screening for DDH risk factors and physical signs was negative. The infant was admitted to the Baby Room for routine newborn care.
-
-### 本版出院摘要
-
-Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). DDH risk screening was explicitly documented as negative. Intrauterine compression screening was explicitly documented as negative. Hip examination was explicitly documented as negative. The physical examination record stated “no gross anomalies”. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
+Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). The physical examination record stated “no gross anomalies”. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
 
  Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
 
-### 本版診斷
+### 診斷
 
 # Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
 
-額外待確認區：無。
+## HD-02：有 DDH 風險且完整髖部檢查陰性
 
-## AS-02：有 finding 時正確顯示，診斷去除風險附錄
+### 合成輸入
 
-保留 DDH、壓迫與 PE 細節；明確陽性所見使用原診斷條列，風險本身不當成診斷。
+```text
+Male newborn
+GA 39+0 weeks, BW 3200 gm, AGA
+NSD
+29 y/o mother, G1 P1 A0
+Apgar score: 9 -> 10
+Maternal blood group: type O, Rh+
+GBS(-)
+GDM(-)
+HBsAg(-), HBeAg(-), HIV(-), RPR(-)
+PROM(-), MAS(-)
+DDH risk factors: Breech(+)
+子宮內壓迫徵象: negative
+Hip PE: negative
+```
+
+### 入院摘要
+
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, DDH screening noted risk factors including breech presentation, but physical signs were negative. The infant was admitted to the Baby Room for routine newborn care.
+
+### 出院摘要
+
+Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). Due to identified DDH risk factors including breech presentation, DDH screening was performed; however, physical examination of the hips was unremarkable. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
+
+ Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
+
+### 診斷
+
+# Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
+
+## HD-03：有風險但沒記錄髖部結果
+
+### 合成輸入
+
+```text
+Male newborn
+GA 39+0 weeks, BW 3200 gm, AGA
+NSD
+29 y/o mother, G1 P1 A0
+Apgar score: 9 -> 10
+Maternal blood group: type O, Rh+
+GBS(-)
+GDM(-)
+HBsAg(-), HBeAg(-), HIV(-), RPR(-)
+PROM(-), MAS(-)
+DDH risk factors: Breech(+)
+子宮內壓迫徵象: negative
+```
+
+### 入院摘要
+
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, DDH risk factors including breech presentation were identified. The infant was admitted to the Baby Room for routine newborn care.
+
+### 出院摘要
+
+Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). DDH risk factors including breech presentation were identified. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
+
+ Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
+
+### 診斷
+
+# Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
+
+## HD-04：風險、壓迫與明確陽性：原句型保留必要 finding
 
 ### 合成輸入
 
@@ -72,75 +125,28 @@ HBsAg(-), HBeAg(-), HIV(-), RPR(-)
 PROM(-), MAS(-)
 DDH risk factors: Oligohydramnios (+), Twins (+)
 子宮內壓迫徵象: 大腿姿勢不對稱 (+)
-PE: Heart murmur(+), grade 2/6 systolic at left sternal border; Left undescended testis(+); Barlow(+), Ortolani(-)
+Hip PE: Barlow(+), Ortolani(-)
+PE: Heart murmur(+), grade 2/6 systolic at left sternal border; Left undescended testis(+)
 ```
 
-手動 PE：無。Sepsis 評估：未勾選。
+### 入院摘要
 
-### 本版入院摘要
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. The physical examination record stated “Heart murmur(+), grade 2/6 systolic at left sternal border; Left undescended testis(+)”. On physical examination, musculoskeletal examination was notable for positive Barlow's sign, asymmetric thigh posture. DDH risk factors including oligohydramnios, twin pregnancy were identified. The infant was admitted to the Baby Room for routine newborn care.
 
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Documented DDH risk factors included oligohydramnios and twin pregnancy. Documented intrauterine compression signs included asymmetric thigh posture. The physical examination record stated “Heart murmur(+), grade 2/6 systolic at left sternal border; Left undescended testis(+); Barlow(+), Ortolani(-)”. The infant was admitted to the Baby Room for routine newborn care.
+### 出院摘要
 
-### 本版出院摘要
-
-Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). Documented DDH risk factors included oligohydramnios and twin pregnancy. Documented intrauterine compression signs included asymmetric thigh posture. The physical examination record stated “Heart murmur(+), grade 2/6 systolic at left sternal border; Left undescended testis(+); Barlow(+), Ortolani(-)”. Due to identified DDH risk factors including oligohydramnios, twin pregnancy, and asymmetric thigh posture, as well as positive Barlow's sign, an outpatient follow-up examination was arranged for further evaluation of DDH. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
+Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). The physical examination record stated “Heart murmur(+), grade 2/6 systolic at left sternal border; Left undescended testis(+)”. Due to identified DDH risk factors including oligohydramnios, twin pregnancy, and asymmetric thigh posture, as well as positive Barlow's sign, an outpatient follow-up examination was arranged for further evaluation of DDH. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
 
  Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
 
-### 本版診斷
+### 診斷
 
 # Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
 # Heart murmur, grade 2/6 systolic at left sternal border
 # Undescended testis, left
 # Positive Barlow's sign
 
-額外待確認區：無。
-
-## AS-03：原有勾選、感染評估與入 Baby Room 結尾
-
-入摘恢復原 sepsis、血糖與勾選所見的模板；出摘保留 PR #4 的 HC 與衛教模板。
-
-### 合成輸入
-
-```text
-Male newborn
-GA 39+0 weeks, BW 3200 gm, AGA
-NSD
-29 y/o mother, G1 P1 A0
-Apgar score: 9 -> 10
-Maternal blood group: type O, Rh+
-GBS(-)
-GDM(+) under diet control
-HBsAg(-), HBeAg(-), HIV(-), RPR(-)
-PROM(+) 24 hours, MAS(-)
-```
-
-手動 PE：Caput succedaneum (check HC Q2H then QD)、Undescended testis (lt)。Sepsis 評估：已勾選。
-
-### 本版入院摘要
-
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). The mother's blood type was O, Rh+. Maternal GBS screening was negative. The mother had gestational diabetes managed with diet control. Maternal serology was negative for HBsAg, HBeAg, HIV, and RPR. The perinatal history included PROM for 24 hours. There was no meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, Caput succedaneum (check HC Q2H then QD) and Undescended testis (lt) were noted. Due to prolonged PROM (>18 hours), a sepsis workup including CBC/DC, CRP, and blood culture was performed. The infant was admitted to the Baby Room for routine newborn care, with blood glucose monitoring for 24 hours.
-
-### 本版出院摘要
-
-Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). Due to prolonged PROM (>18 hours), a sepsis workup including CBC/DC, CRP, and blood culture was performed. The laboratory results were within normal limits. Due to the presence of caput succedaneum, head circumference was monitored every 2 hours (Q2H) for the first day, followed by daily (QD) measurements until discharge. No significant interval increase was observed. Blood glucose levels were monitored per protocol and remained within normal limits. The infant was noted to have left undescended testis. Caregivers were counseled regarding the condition and advised to follow up at the pediatric surgery clinic. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
-
- Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
-
-### 本版診斷
-
-# Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
-# Caput succedaneum
-# Undescended testis, lt
-# Infant of diabetic mother
-# Prolonged rupture of membranes
-# Neonatal infection evaluation planned (selected)
-
-額外待確認區：無。
-
-## AS-04：原文與勾選衝突、OR 及不確定結果
-
-摘要仍能核對真正衝突；未知／OR 不升格為確定陽性，也不使用已移除的診斷風險附錄。
+## HD-05：HIV 明確陽性保留，DDH 已記錄計畫不寫成完成
 
 ### 合成輸入
 
@@ -153,119 +159,64 @@ Apgar score: 9 -> 10
 Maternal blood group: type O, Rh+
 GBS(-)
 GDM(-)
-HBsAg(-), HBeAg(-), HIV(-), RPR(-)
+HBsAg(-), HBeAg(-), HIV(+), RPR(-)
 PROM(-), MAS(-)
-DDH risk factors: Family Hx(?)
-PE: Heart murmur(-); Barlow(+) or Ortolani(+)
+DDH risk factors: Family Hx (+)
+Hip PE: Barlow(+)
+Follow-up: hip ultrasound planned at 6 weeks, appointment not yet arranged.
 ```
 
-手動 PE：Heart murmur。Sepsis 評估：未勾選。
+### 入院摘要
 
-### 本版入院摘要
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal history was significant for positive serology for HIV. Screening for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR) was negative. There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, musculoskeletal examination was notable for positive Barlow's sign. DDH risk factors including family history of DDH were identified. The infant was admitted to the Baby Room for routine newborn care.
 
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. DDH risk screening, as recorded: Family Hx(?). The physical examination record stated “Heart murmur(-); Barlow(+) or Ortolani(+)”. PE source conflict: Heart murmur. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection. The infant was admitted to the Baby Room for routine newborn care.
+### 出院摘要
 
-### 本版出院摘要
+Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). DDH risk factors including family history of DDH were identified. Musculoskeletal examination was notable for positive Barlow's sign. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
 
-Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). DDH risk screening, as recorded: Family Hx(?). The physical examination record stated “Heart murmur(-); Barlow(+) or Ortolani(+)”. PE source conflict: Heart murmur. Manual selection indicates presence, while the supplied PE records a negative or conflicting result. Please reconcile the source and manual selection. The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
+ Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The disposition record stated “Follow-up: hip ultrasound planned at 6 weeks, appointment not yet arranged”.
 
- Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
-
-### 本版診斷
+### 診斷
 
 # Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
-# Heart murmur (source/manual conflict; presence not established)
-
-額外待確認區：無。
-
-## AS-05：晚期 PE 與照護留在適用的文書
-
-原版入摘不增加後續病程；晚期所見、實際數值與出院安排仍保留於出摘，不再在入摘下方重複長篇資料。
-
-### 合成輸入
-
-```text
-Male newborn
-GA 39+0 weeks, BW 3200 gm, AGA
-NSD
-29 y/o mother, G1 P1 A0
-Apgar score: 9 -> 10
-Maternal blood group: type O, Rh+
-GBS(-)
-GDM(-)
-HBsAg(-), HBeAg(-), HIV(-), RPR(-)
-PROM(-), MAS(-)
-PE: Heart murmur(-) at birth, Heart murmur(+) on day 2
-Nursery course: feeding was well tolerated at 48 hours of age.
-Transcutaneous bilirubin: 8.4 mg/dL at 60 hours of age
-Discharged home in stable condition at 72 hours of age.
-OPD follow-up on 2026-10-26.
-```
-
-手動 PE：無。Sepsis 評估：未勾選。
-
-### 本版入院摘要
-
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Heart murmur was absent at birth. The infant was admitted to the Baby Room for routine newborn care.
-
-### 本版出院摘要
-
-Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). Heart murmur was absent at birth. Heart murmur was present on day 2. Feeding was well tolerated at 48 hours of age. Transcutaneous bilirubin was 8.4 mg/dL at 60 hours of age. The infant was managed with routine nursery care and rooming-in was arranged with the mother. 
-
- The infant was discharged home in stable condition at 72 hours of age. OPD follow-up was planned for 2026-10-26.
-
-### 本版診斷
-
-# Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
-# Heart murmur, on day 2
-
-額外待確認區：無。
-
-## AS-06：原文明示尚未執行的入院處置
-
-明示尚未執行／計畫的同項處置優先，恢復原模板不會同時寫成相反的已完成病程。
-
-### 合成輸入
-
-```text
-Male newborn
-GA 39+0 weeks, BW 3200 gm, AGA
-NSD
-29 y/o mother, G1 P1 A0
-Apgar score: 9 -> 10
-Maternal blood group: type O, Rh+
-GBS(-)
-GDM(-)
-HBsAg(-), HBeAg(-), HIV(-), RPR(-)
-PROM(-), MAS(-)
-Respiratory support at admission: CPAP planned; oxygen not yet administered.
-Sepsis workup at admission: CBC/DC, CRP, and blood culture planned, not yet performed.
-```
-
-手動 PE：Respiratory distress。Sepsis 評估：已勾選。
-
-### 本版入院摘要
-
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, the infant exhibited respiratory distress. The treatment record stated “Sepsis workup at admission: CBC/DC, CRP, and blood culture planned, not yet performed”. The infant was admitted to the Baby Room. The treatment record stated “Respiratory support at admission: CPAP planned; oxygen not yet administered”.
-
-### 本版出院摘要
-
-Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). Physical examination findings included Respiratory distress. The treatment record stated “Respiratory support at admission: CPAP planned; oxygen not yet administered”. The treatment record stated “Sepsis workup at admission: CBC/DC, CRP, and blood culture planned, not yet performed”.
-
-### 本版診斷
-
-# Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
-# Respiratory distress
-# Neonatal infection evaluation planned (selected)
+# Positive Barlow's sign
 
 Additional source records
-Treatment and prophylaxis, as recorded: Respiratory support at admission: CPAP planned; oxygen not yet administered.
-Sepsis workup at admission: CBC/DC, CRP, and blood culture planned, not yet performed..
+Disposition and follow-up, as recorded: Follow-up: hip ultrasound planned at 6 weeks, appointment not yet arranged..
 
-額外待確認區：無。
+## HD-06：HIV 不明省略，必要 DDH 不確定內容保留
 
-## 驗收範圍
+### 合成輸入
 
-入摘及出摘各有固定原版全文、選項、finding、否定／不確定、來源優先、Copy 和 Reset 測試。診斷不要求用風險附錄保存原文，三份文書與 parser 仍驗證應有 finding；風險或不確定所見不可變成確診。晚期 PE 不回填成初始所見，出摘仍保留實際時間與照護。
+```text
+Male newborn
+GA 39+0 weeks, BW 3200 gm, AGA
+NSD
+29 y/o mother, G1 P1 A0
+Apgar score: 9 -> 10
+Maternal blood group: type O, Rh+
+GBS(-)
+GDM(-)
+HBsAg(-), HBeAg(-), HIV(?), RPR(-)
+PROM(-), MAS(-)
+DDH risk factors: Family Hx(?)
+Hip PE: Barlow(+) or Ortolani(+)
+```
 
-這些固定案例不代表任意自由文字都能自動判讀。
+### 入院摘要
+
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. DDH risk assessment: Family Hx(?). Hip examination: Barlow(+) or Ortolani(+). The infant was admitted to the Baby Room for routine newborn care.
+
+### 出院摘要
+
+Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). DDH risk assessment: Family Hx(?). Hip examination: Barlow(+) or Ortolani(+). The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated. 
+
+ Prior to discharge, total bilirubin level was checked and found to be within normal limits (WNL). The infant was discharged in stable condition with scheduled MBD and OPD follow-up.
+
+### 診斷
+
+# Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
+
+## 比對原則
+
+資料缺漏不寫成陰性；單一 hip sign 陰性不推成全部髖部檢查正常。有風險不直接列為確診 DDH，陽性髖部徵象仍以 sign 記載。既有篩檢／回診模板保留使用者原本的寫法；同項原文明示計畫中、尚未安排、拒絕或取消時，以該記錄為準。

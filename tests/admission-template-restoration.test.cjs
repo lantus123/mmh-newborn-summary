@@ -24,9 +24,10 @@ DDH risk factors: negative
 子宮內壓迫徵象: negative
 Hip PE: negative`;
 
-// Fixed prose copied from the pre-round generateSummary, independent of the
-// implementation under test. Whitespace/HTML highlighting are not substantive.
-const ORIGINAL_NORMAL_ADMISSION = `This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, HIV, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Physical examination revealed no gross anomalies. Screening for DDH risk factors and physical signs was negative. The infant was admitted to the Baby Room for routine newborn care.`;
+// Fixed prose follows the pre-round generateSummary with the user's explicit
+// nonpositive-HIV omission, independent of the implementation under test.
+// Whitespace/HTML highlighting are not substantive.
+const ORIGINAL_NORMAL_ADMISSION = `This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. Physical examination revealed no gross anomalies. Screening for DDH risk factors and physical signs was negative. The infant was admitted to the Baby Room for routine newborn care.`;
 
 const PR4_ROUTINE_DISCHARGE = `Upon admission, the infant received routine prophylaxis including HBV vaccine (IM), tetracycline ophthalmic ointment (topical), and Vitamin K1 (IM). The infant was managed with routine nursery care and rooming-in was arranged with the mother. Feeding volume was gradually increased as tolerated.
 

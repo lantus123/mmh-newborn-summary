@@ -1065,8 +1065,51 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             if(state==='inadequate') return 'IAP: inadequate (without adequate intrapartum antibiotic prophylaxis), as documented'+source;
             return `IAP: ${state==='conflict'?'conflicting source records; review required':'completion and adequacy not documented or unresolved'}${data.iapSource?`; source: ${data.iapSource}`:''}`;
         }
+        // HIV is a positive-only output field. Keep the parsed source intact;
+        // omit only its nonpositive field clause from copies used for rendering.
+        function hivOutputData(data) {
+            const positive=(data.serologyStatus?.HIV||(data.serology?.HIV==='+'?'positive':'unknown'))==='positive';
+            const clinical=getClinicalSourceRecords(data);
+            const infantLines=[...coreRows(data.sourceText||'','all').filter(row=>row.subject==='infant').map(row=>row.text),
+                ...Object.entries(clinical).filter(([key])=>!/^prenatal/.test(key)).flatMap(([,lines])=>lines)].filter(line=>/\bHIV\b/i.test(line)&&!/^\s*(?:maternal|mother(?:'s)?|prenatal|antenatal)\b/i.test(line));
+            const infantPositive=parseCoreStatus(infantLines.join('\n'),'HIV','all').status==='positive';
+            const infantSources=new Set(infantLines.map(line=>normalizeCoreText(line).trim()));
+            const treatmentSources=new Set(clinical.treatment.map(line=>normalizeCoreText(line).trim()));
+            const clean=value=>{
+                if(typeof value==='string'&&/\bHIV\b/i.test(value)){
+                    return normalizeCoreText(value).split('\n').map(line=>{
+                        const tokens=coreTokens(line), spans=[];
+                        tokens.forEach((token,index)=>{
+                            if(token.key!=='HIV')return;
+                            const next=tokens[index+1]?.index??line.length;
+                            const after=line.slice(token.end,next), before=line.slice(0,token.index).split(/[;,]/).at(-1);
+                            const result=coreResult({before,after});
+                            if(!result.explicit&&treatmentSources.has(line.trim())){
+                                // Omit a nonpositive HIV label, never the actual
+                                // drug, dose, timing or state of a treatment.
+                                if(!positive&&!infantPositive)spans.push([token.index,token.end]);
+                                return;
+                            }
+                            if((infantSources.has(line.trim())?infantPositive:positive)&&result.status==='positive')return;
+                            const separator=after.search(/[,;]/);
+                            const end=separator<0?next:token.end+separator;
+                            const prefix=line.slice(0,token.index).match(/(?:(?:maternal|mother(?:'s)?|prenatal|antenatal|infant(?:'s)?|newborn(?:'s)?)\s*:?[ \t]*)?(?:(?:no|without|positive|negative|unknown|possible|suspected)(?:\s+for)?\s+)?$/i)?.[0]||'';
+                            spans.push([token.index-prefix.length,end]);
+                        });
+                        for(const [start,end] of spans.reverse())line=line.slice(0,start)+line.slice(end);
+                        return line.replace(/([,;])[ \t]*[,;]/g,'$1').replace(/:[ \t]*[,;][ \t]*/g,': ').replace(/^[ \t]*[,;][ \t]*|[,;][ \t]*$/g,'').trim()
+                            .replace(/^(?:(?:maternal|mother(?:'s)?|prenatal|antenatal|infant|newborn)\s*:?[ \t]*)?(?:(?:serology|lab(?:s|oratory)?(?:\s+results?)?)\s*:)?[ \t]*$/i,'');
+                    }).filter(Boolean).join('\n');
+                }
+                if(Array.isArray(value))return value.map(clean);
+                if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,clean(item)]));
+                return value;
+            };
+            return clean(data);
+        }
         function outputSerologyText(data) {
-            return ['HBsAg','HBeAg','HIV','RPR'].map(key=>{
+            data=hivOutputData(data);
+            return ['HBsAg','HBeAg','HIV','RPR'].filter(key=>key!=='HIV'||(data.serologyStatus?.HIV||(data.serology?.HIV==='+'?'positive':'unknown'))==='positive').map(key=>{
                 const explicit=data.serologyStatus?.[key];
                 const status=explicit||(data.serology?.[key]==='+'?'positive':data.serology?.[key]==='-'?'negative':'unknown');
                 return outputStatusText(key,status,data.serologySource?.[key]||'');
@@ -1430,6 +1473,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         }
 
         function narrativeMaternalText(data) {
+            data=hivOutputData(data);
             const parts=[], negativeHistory=[];
             const bloodEntries=maternalNarrativeEntries(data.bloodGroupSource,'blood');
             const blood=data.bloodGroup;
@@ -1534,6 +1578,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             const grouped={positive:[],negative:[]}, serologyDetails=[];
             for(const key of ['HBsAg','HBeAg','HIV','RPR']) {
                 const status=data.serologyStatus?.[key]||(data.serology?.[key]==='+'?'positive':data.serology?.[key]==='-'?'negative':'unknown');
+                if(key==='HIV'&&status!=='positive')continue;
                 const entries=maternalNarrativeEntries(data.serologySource?.[key],key);
                 if(status==='positive'||status==='negative') {
                     if(entries.every(entry=>!entry.tail&&!entry.unresolved)) grouped[status].push(key);
@@ -1762,20 +1807,68 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             }
         }
 
-        // Keep the original admission prose and checkbox workflow, while
-        // retaining the corrected interpretation of supplied examinations.
-        function admissionTemplatePE(data,peFindings,records) {
-            const groups=data.recordedAssessment;
-            const allNegative=groups&&['risk','compression','hip'].every(key=>{
+        // The original DDH sentences carry positive findings once. Ordinary
+        // negative siblings stay compact; genuine qualifiers remain as supplied.
+        function ddhTemplateContext(data,peFindings) {
+            const groups=data.recordedAssessment||{}, notes=[];
+            const completeNegative=key=>{
                 const group=groups[key];
-                return group.source&&!group.requiresReview&&(group.groupState==='negative'||group.records.length===ASSESSMENT_FIELDS[key].length&&group.records.every(record=>record.state==='negative'));
-            })&&!peFindings.some(finding=>finding.includes('DDH suspect'));
+                return !!group?.source&&!group.requiresReview&&(group.groupState==='negative'||group.records.length===ASSESSMENT_FIELDS[key].length&&group.records.every(record=>record.state==='negative'));
+            };
+            const split=value=>{
+                const pieces=[];
+                for(const piece of String(value||'').split(/[,;\n]\s*(?!or\b|或)/i)){
+                    if(!piece.trim())continue;
+                    if(pieces.length&&(/\bor\s*$|或\s*$/i.test(pieces.at(-1))||/^\s*(?:or\b|或)/i.test(piece)))pieces[pieces.length-1]+=' '+piece.trim();
+                    else pieces.push(piece.trim());
+                }
+                return pieces;
+            };
+            const hasHip=value=>ASSESSMENT_FIELDS.hip.some(field=>new RegExp(field.re,'i').test(value));
+            const mixedHip=value=>hasHip(value)&&/\band\b/i.test(value)&&value.split(/\band\b/i).some(piece=>piece.trim()&&!hasHip(piece));
+            const separateHip=value=>hasHip(value)&&!mixedHip(value);
+            const sourcePieces=split(data.sourcePE), hipPieces=sourcePieces.filter(separateHip);
+            const sourcePE=hipPieces.length?String(data.sourcePE||'').split('\n').map(line=>hasHip(line)?split(line).filter(piece=>!separateHip(piece)).join('; '):line).join('\n'):data.sourcePE;
+            const labels={risk:'DDH risk assessment',compression:'Intrauterine compression signs',hip:'Hip examination'};
+            const values={};
+            for(const key of ['risk','compression','hip']){
+                const group=groups[key], positive=[];
+                if(!group){values[key]=[...(data[{risk:'ddhRisk',compression:'compressionSigns',hip:'ddhPe'}[key]]||[])];continue;}
+                const source=key==='hip'?split(group.source).filter(hasHip).join('; ')||group.source:group.source;
+                const details=[];
+                for(const piece of split(source)){
+                    const parsed=parseAssessmentGroup(piece,ASSESSMENT_FIELDS[key]);
+                    const actual=parsed.records.filter(record=>group.records.some(full=>full.name===record.name&&full.state==='positive')&&record.state==='positive');
+                    const unresolved=parsed.records.some(record=>record.state==='unknown'||record.state==='conflict'||['unknown','conflict'].includes(group.records.find(full=>full.name===record.name)?.state));
+                    // A compound PE observation remains general PE; a murmur
+                    // beside a hip sign must not become a musculoskeletal finding.
+                    if(key==='hip'&&mixedHip(piece)&&String(data.sourcePE||'').includes(piece)){
+                        positive.push(...actual.map(record=>record.positive||record.name));continue;
+                    }
+                    if(unresolved||parsed.groupState==='unknown'||parsed.groupState==='positive'||!parsed.records.length&&!parsed.groupState&&piece){details.push(piece);continue;}
+                    if(actual.length){
+                        if(parsed.requiresReview)positive.push(piece);
+                        else positive.push(...actual.map(record=>record.positive||record.name));
+                    }
+                }
+                values[key]=[...new Set(positive)];
+                if(details.length)notes.push(`${labels[key]}: ${hlSource(details.join('; '))}.`);
+            }
+            const suspect=peFindings.some(finding=>finding.includes('DDH suspect'));
+            if(suspect&&!values.hip.length){
+                if(completeNegative('hip'))notes.push(hlSource('DDH source/manual conflict: suspected DDH was selected, while the supplied hip examination was negative.'));
+                else values.hip.push('suspected DDH on examination');
+            }
+            return {...values,sourcePE,notes,hipNegative:completeNegative('hip'),allNegative:!suspect&&['risk','compression','hip'].every(completeNegative)};
+        }
+        function admissionTemplatePE(data,peFindings,records) {
+            const ddh=ddhTemplateContext(data,peFindings);
             const clinicalLines=new Set(Object.values(records).flat());
-            const source=String(data.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
+            const source=String(ddh.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
             const normal=/^(?:(?:physical\s+examination\s+revealed\s+)?no\s+gross\s+anomalies|(?:grossly\s+)?normal(?:\s+(?:PE|physical\s+examination))?)[.]?$/i.test(source);
-            const assessmentData={...data,sourcePE:normal?'':source,recordedAssessment:allNegative?undefined:groups};
+            const assessmentData={...data,sourcePE:normal?'':source,recordedAssessment:undefined};
             const conflicts=collectPEConflicts(data,peFindings);
-            const selected=peFindings.filter(finding=>!conflicts.includes(finding)&&!alreadyRecordedPE(data,finding));
+            const selected=peFindings.filter(finding=>!finding.includes('DDH suspect')&&!conflicts.includes(finding)&&!alreadyRecordedPE(data,finding));
             const observations=[], respiratory=selected.find(finding=>finding.includes('Respiratory distress'));
             if(respiratory){
                 const signs=[];
@@ -1785,15 +1878,20 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             }
             const other=selected.filter(finding=>!finding.includes('Respiratory distress'));
             if(other.length)observations.push(`${joinOxford(other.map(hlSource))} ${other.length===1?'was':'were'} noted`);
+            const musculoskeletal=[...ddh.hip,...ddh.compression];
+            if(musculoskeletal.length)observations.push(`musculoskeletal examination was notable for ${musculoskeletal.map(hlSource).join(', ')}`);
+            if(ddh.risk.length){
+                const risks=ddh.risk.map(hlSource).join(', ');
+                observations.push(!musculoskeletal.length&&ddh.hipNegative?`DDH screening noted risk factors including ${risks}, but physical signs were negative`:`DDH risk factors including ${risks} were identified`);
+            }
             const manual=observations.length?`On physical examination, ${observations.join('. ')}.`:'';
-            let text=!source||normal
-                ?[manual||(normal?'Physical examination revealed no gross anomalies.':''),generateRecordedAssessment(assessmentData,[])].filter(Boolean).join(' ')
-                :[narrativePE(assessmentData,conflicts,records),manual].filter(Boolean).join(' ');
-            if(allNegative)text=[text,'Screening for DDH risk factors and physical signs was negative.'].filter(Boolean).join(' ');
-            return text;
+            let text=!source||normal?manual||(normal?'Physical examination revealed no gross anomalies.':''):[narrativePE(assessmentData,conflicts,records),manual].filter(Boolean).join(' ');
+            if(ddh.allNegative)text=[text,'Screening for DDH risk factors and physical signs was negative.'].filter(Boolean).join(' ');
+            return [text,...ddh.notes].filter(Boolean).join(' ');
         }
 
         function generateSummary(data, peFindings) {
+            data=hivOutputData(data);
             const scope=getNarrativeAdmissionScope(data);
             const peContext=admissionPEContext(data,peFindings,scope);
             const initialPE=peContext.findings.filter(finding=>!collectPEConflicts(peContext.assessmentData,peContext.findings).includes(finding));
@@ -1847,13 +1945,13 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 matPos.push(gbsText);
             }
             if(data.preEclampsia) matPos.push(hlSource('Pre-eclampsia'));
-            const posSero=Object.entries(data.serology).filter(([,v])=>v==='+').map(([k])=>k);
-            const negSero=Object.entries(data.serology).filter(([,v])=>v==='-').map(([k])=>k);
+            const posSero=Object.entries(data.serology).filter(([key,v])=>v==='+'&&(key!=='HIV'||!data.serologyStatus?.HIV||data.serologyStatus.HIV==='positive')).map(([k])=>k);
+            const negSero=Object.entries(data.serology).filter(([key,v])=>key!=='HIV'&&v==='-').map(([k])=>k);
             if(posSero.length>0) matPos.push(`positive serology for ${hlSource(posSero.join(', '))}`);
             let matNeg=[];
             if(data.gdmStatus==='negative') matNeg.push(hlSource('GDM'));
             if(data.gbsStatus==='negative') matNeg.push(hlSource('GBS colonization'));
-            if(Object.values(data.serology).every(v=>v==='-')) matNeg.push(hlSource('infectious serology (HBsAg, HBeAg, HIV, RPR)'));
+            if(['HBsAg','HBeAg','RPR'].every(key=>data.serology[key]==='-')) matNeg.push(hlSource('infectious serology (HBsAg, HBeAg, RPR)'));
             else if(negSero.length>0) matNeg.push(hlSource(negSero.join(', ')));
             let matStr=`Maternal blood type is ${hlSource(data.bloodGroup)}.`;
             if(matPos.length>0){matStr+=` Maternal history was significant for ${matPos.join(', ')}.`;if(matNeg.length>0)matStr+=` Screening for ${matNeg.join(', ')} was negative.`;}
@@ -1861,7 +1959,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             const maternalKeys=[['gbsSource','gbs'],['iapSource','iap'],['gdmSource','gdm'],['preEclampsiaSource','preeclampsia']];
             const maternalDetail=maternalKeys.some(([sourceKey,key])=>maternalNarrativeEntries(data[sourceKey],key).some(entry=>entry.tail||entry.unresolved))
                 ||['gbsStatus','gdmStatus','preEclampsiaStatus','bloodGroupStatus'].some(key=>data[key]==='conflict')
-                ||['HBsAg','HBeAg','HIV','RPR'].some(key=>maternalNarrativeEntries(data.serologySource?.[key],key).some(entry=>entry.tail||entry.unresolved));
+                ||['HBsAg','HBeAg','HIV','RPR'].filter(key=>key!=='HIV'||data.serologyStatus?.HIV==='positive').some(key=>maternalNarrativeEntries(data.serologySource?.[key],key).some(entry=>entry.tail||entry.unresolved));
             if(maternalDetail)matStr=narrativeMaternalText(data);
             let periStr='';
             const promStatus=data.prom?.status, masStatus=data.masStatus;
@@ -1944,6 +2042,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         // GENERATE CONSULTATION
         // ============================================================
         function generateConsultation(data, peFindings) {
+            data=hivOutputData(data);
             const records=getClinicalSourceRecords(data);
             const weeks=outputGAWeeks(data);
             const prematurity=weeks===null?'not documented':weeks<37?'+':'-';
@@ -2002,6 +2101,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             return {records,entries,text,has,prophylaxis,closing,course,unresolved,respiratoryUnresolved};
         }
         function generateDischargeSummary(data, peFindings) {
+            data=hivOutputData(data);
             const context=dischargeTemplateContext(data), {records,has,prophylaxis,closing,course}=context;
             const conflicts=collectPEConflicts(data,peFindings);
             const selected=peFindings.filter(finding=>!conflicts.includes(finding));
@@ -2066,23 +2166,27 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             }
             if(hydrocele&&!educationRecorded)care.push(EDU_TEMPLATES.hydrocele[getVerbosity()]());
 
-            // Preserve repaired DDH/compression/PE interpretation, including
-            // explicit negatives, grades, sides and source/manual conflicts.
-            // The old risk-only branch must not invent a normal hip examination.
             const described=selected.filter(finding=>
                 hasRD&&!respiratoryRecorded&&finding.includes('Respiratory distress')
                 ||(caputHC||cephHC)&&!has(/\b(?:head\s+circumference|HC)\b/i)&&/Caput succedaneum|Cephalohematoma/.test(finding)
                 ||finding.includes('Fever')&&!feverRecorded
                 ||!educationRecorded&&/Undescended testis|Hydrocele/.test(finding));
-            const examination=narrativePE(data,peFindings.filter(finding=>!described.includes(finding)),records);
+            const ddh=ddhTemplateContext(data,selected);
+            const examination=narrativePE({...data,sourcePE:ddh.sourcePE,recordedAssessment:undefined},peFindings.filter(finding=>!finding.includes('DDH suspect')&&!described.includes(finding)),records);
             if(examination)care.push(examination);
-            const ddhPE=[...(data.ddhPe||[])];
-            if(selected.some(finding=>finding.includes('DDH suspect'))&&!ddhPE.length)ddhPE.push('suspected DDH on examination');
-            if(ddhPE.length&&!has(/\b(?:DDH|hip|orthopedic)\b|\b(?:follow[- ]?up|referral)\b[^\n]*\b(?:declined|refused|cancelled|canceled|pending|planned)\b/i)){
-                const risks=[...(data.ddhRisk||[]),...(data.compressionSigns||[])];
-                const reason=risks.length?`identified DDH risk factors including ${joinOxford(risks.map(hlSource))}, as well as ${joinOxford(ddhPE.map(hlSource))}`:`${joinOxford(ddhPE.map(hlSource))} on physical examination`;
+            const risks=[...ddh.risk,...ddh.compression], riskText=joinOxford(risks.map(hlSource));
+            const followupRecorded=has(/\b(?:DDH|hip|orthopedic)\b|\b(?:follow[- ]?up|referral)\b[^\n]*\b(?:declined|refused|cancelled|canceled|pending|planned)\b/i);
+            if(ddh.hip.length&&!followupRecorded){
+                const peText=joinOxford(ddh.hip.map(hlSource));
+                const reason=risks.length?`identified DDH risk factors including ${riskText}, as well as ${peText}`:`${peText} on physical examination`;
                 care.push(`Due to ${reason}, an ${hl('outpatient follow-up examination was arranged')} for further evaluation of DDH.`);
+            }else if(risks.length&&!ddh.hip.length&&ddh.hipNegative&&!ddh.notes.length&&!followupRecorded){
+                care.push(`Due to identified DDH risk factors including ${riskText}, DDH screening was performed; however, ${hl('physical examination of the hips was unremarkable')}.`);
+            }else{
+                if(risks.length)care.push(`DDH risk factors including ${riskText} were identified.`);
+                if(ddh.hip.length)care.push(`Musculoskeletal examination was notable for ${joinOxford(ddh.hip.map(hlSource))}.`);
             }
+            care.push(...ddh.notes);
             if(care.length)parts.push(care.join(' '));
 
             // Preserve source chronology. Only independent single-day records
@@ -2118,7 +2222,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             const records=getClinicalSourceRecords(data), clinicalLines=new Set(Object.values(records).flat());
             let source=String(data.sourcePE||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
             const hip=data.recordedAssessment?.hip;
-            const hipSource=hip?.renderSource||(!source&&hip?.source)||'';
+            const hipSource=String(hip?.renderSource||(!source&&hip?.source)||'').split('\n').filter(line=>!clinicalLines.has(line.trim())).join('\n').trim();
             if(hipSource&&!source.includes(hipSource))source=[source,hipSource].filter(Boolean).join('\n');
             source=normalizeAssessmentText(source);
             if(!source)return [];
@@ -2155,6 +2259,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
         }
 
         function generateDiagnosis(data, peFindings) {
+            data=hivOutputData(data);
             const lines=[];
             const weeks=outputGAWeeks(data);
             const maturity=weeks===null?'Newborn':weeks<37?'Preterm':'Term';
