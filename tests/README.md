@@ -36,25 +36,29 @@ The user first requested the original discharge writing/workflow, then also
 requested: 「入摘內容也變成太複雜了，請恢復成原本的版本。我需要的就是有 finding 時要正確顯示。還有診斷下面也不需要 risk factor。」
 The original document formats are the reference; the repaired finding parsers
 remain required. The earlier PR #2/#3 source-only narrative format is superseded.
+The later correction displays HIV only when definitely positive and restores
+compact original DDH wording in admission and discharge.
 
 | Output or region | Required behavior |
 | --- | --- |
 | BR admission body | Restore the original connected paragraph: birth/BW → maternal → PROM/MAS → APGAR → PE → selected evaluation and Baby Room ending. Do not append the later hospital course. |
 | BR discharge body | Retain PR #4's restored routine prophylaxis → selected BR care → rooming-in/feeding → bilirubin and discharge/MBD/OPD template, without a birth/maternal opening. |
-| DDH/compression/PE | Display the recorded finding, grade, laterality, negation and uncertainty correctly in the appropriate note. Missing/unknown hip PE is not a negative or normal examination. |
+| Maternal HIV | Mention HIV only for a definite positive result. Omit negative, unknown, indeterminate or conflicting HIV from generated text while retaining the parsed source state. Other serology remains available. |
+| DDH/compression/PE | Use the original compact admission/discharge DDH branches when supported by the record, without repeating broad risk or negative hip catalogs. Retain actual findings, grade, laterality and necessary partial-negative/unknown/conflict qualifiers. Missing/unknown hip PE is not a negative or normal examination. |
 | Diagnosis | Remove the lower Risk factors and examination findings appendix. Confirmed raw PE positives may join the original diagnosis-style lines; a risk, OR alternative or unknown result does not become a diagnosis. A positive hip sign is recorded as a sign, without inferring confirmed DDH. |
 | Clinical source | Explicit care/refusal/pending states take precedence over opposite matching defaults. Later PE/course remains in discharge and consultation, without becoming an initial admission observation. |
 | Review and Copy | Remove the added admission/discharge course and plan checklists. Copy copies only the active body; Reset clears all outputs and controls. |
 
 A complete, explicitly normal fixture must reproduce the original admission
-paragraph, allowing only whitespace normalization. It includes explicit normal
-PE and negative DDH/compression/hip records, so exact comparison does not demand
-restoring the original false-negative behavior for missing records. Birth-only
-input must still produce the original routine discharge template.
+paragraph with the requested omission of nonpositive HIV, allowing only
+whitespace normalization. It includes explicit normal PE and negative
+DDH/compression/hip records, so exact comparison does not demand restoring the
+original false-negative behavior for missing records. Birth-only input must
+still produce the original routine discharge template.
 
 Restoring a template is an intentional return to the user's workflow, not proof
 that the described care occurred. Shared parser repairs, consultation, campus
-configuration, controls, Copy/Reset and PR #4 discharge functions remain in scope
+configuration, controls, Copy/Reset and PR #4 routine discharge care remain in scope
 for regression protection. No new NBC transfer workflow is introduced.
 
 ### Deliberate expectation changes
@@ -71,14 +75,25 @@ for regression protection. No new NBC transfer workflow is introduced.
 - Maternal status, IAP/GDM source details, corrected GA/BW, qualifier, treatment
   state and source/manual conflict assertions remain required in their
   appropriate document context.
-- All PR #4 discharge expectations remain unchanged. The existing new discharge
-  tests may have only their admission-side assertions updated.
+- The normal admission fixture now omits HIV from its negative-serology list.
+  HIV parsing and definite-positive reporting remain protected separately.
+- DDH normal, risk and positive prose returns to the supported original compact
+  branches. This wording change does not permit an omitted or partially negative
+  hip examination to become a fully negative screen.
+- An isolated ordinary `Hip PE: negative` or `DDH PE: negative`, without an
+  accompanying risk or abnormality, may be omitted from admission/discharge.
+  The parser and consultation still preserve its hip-specific scope; it cannot
+  become a general normal PE or a complete negative DDH risk-and-sign screen.
+- PR #4 routine discharge care, control selections and explicit-source
+  precedence remain required; its DDH wording follows the later compact-text
+  correction. Other discharge expectations are not redefined.
 
 ## Test files
 
 | File | Purpose |
 | --- | --- |
-| `admission-template-restoration.test.cjs` | Original full admission paragraph, original selections, finding accuracy, concise diagnosis, Copy/Reset and unchanged discharge |
+| `hiv-ddh-template.test.cjs` | Positive-only HIV display and compact original DDH wording without lost findings or unsupported normal examinations |
+| `admission-template-restoration.test.cjs` | Original full admission paragraph, original selections, finding accuracy, concise diagnosis, Copy/Reset and routine discharge preservation |
 | `discharge-template-restoration.test.cjs` | Original complete routine text, course-focused opening, selections, explicit-source overrides, DDH/PE, campus HC, Copy and Reset |
 | `br-document-scope.test.cjs` | Initial-admission scope, later PE/source in its applicable note, independent original templates and BR care/disposition |
 | `recorded-assessment.test.cjs` | DDH/compression/PE formats, explicit states, details and manual selections |
@@ -97,7 +112,30 @@ remaining regression requirements; historical test counts do not establish the
 current output contract. Exact execution counts and deployed-browser results
 are recorded with the restoring PR.
 
-## Current admission/diagnosis restoration verification (2026-10-19)
+## Current HIV/DDH wording verification (2026-10-19)
+
+The final source passed **191 tests**, with **0 failures, cancellations or
+skips**. Source and all test files were unchanged during execution.
+`index.html` SHA-256:
+`459fb2f9f7ad4397168fae991fe448890f9e7620ee69d93e15a04a48b08c74ad`.
+
+All 181 prior cases remain. Ten focused cases were added in
+`hiv-ddh-template.test.cjs`; only two existing cases changed: AR-01 omits HIV
+from the negative-serology fixture, and the isolated hip-negative case follows
+the compact-text contract above. Core parsing and control-state assertions
+were not relaxed. The new cases also protect same-row doses/results, maternal
+versus infant HIV, explicitly positive HIV-related treatment, mixed cardiac
+and hip PE, and pending/canceled DDH follow-up. Follow-up records are excluded
+from hip-sign diagnosis details while remaining in the existing source section.
+
+Two reviewers read six full synthetic admission/discharge/diagnosis sets.
+The normal admission matches the original paragraph except for the authorized
+negative-HIV omission; the supported risk-only discharge DDH sentence matches
+the original. The last diagnosis/source-boundary correction was then reread
+and included in the final 191-test run. Production interaction, actual Copy
+and deployment evidence are recorded in the release PR after deployment.
+
+## Historical admission/diagnosis restoration verification (2026-10-19)
 
 The final candidate passed **181 tests**, with **0 failures, cancellations or
 skips**, using the command above. Verified `index.html` SHA-256:
@@ -124,9 +162,9 @@ copied alone, using a short qualifier in the original diagnosis list.
 Source comparison confirms the shared parsers and narrative helpers,
 consultation generator, PR #4 discharge context/generator, parse-status UI,
 campus controls, Copy and Reset are unchanged. Core parser/state tests and the
-test harness are unchanged. Current live deployment and actual-clipboard checks
-are recorded in the restoring PR after deployment; historical results below do
-not substitute for that acceptance.
+test harness are unchanged. Live deployment and actual-clipboard checks for
+that revision are recorded in its restoring PR; those historical results do
+not substitute for acceptance of the current correction.
 
 ## Historical PR #4 discharge restoration verification (2026-10-19)
 
