@@ -118,7 +118,7 @@ accept({
   manualPE: ['Fever'],
   lines: [989], desired: '保留原始持續發燒/治療資訊；單一 Fever 勾選不能產生自行退燒且無治療的結論。',
   inspect: o => [
-    criterion('出摘保留持續發燒及治療資訊', /persistent fever/.test(o.discharge) && /antibiotics started/.test(o.discharge)),
+    criterion('出摘保留持續發燒及治療資訊', /persistent fever/.test(o.discharge) && /antibiotics (?:were )?started/i.test(o.discharge)),
     criterion('出摘没有相反的自行緩解敘述', !/resolved without intervention/.test(o.discharge)),
   ],
   evidence: o => ({ discharge: match(o.discharge, /The infant developed fever[^]*?intervention\./) }),

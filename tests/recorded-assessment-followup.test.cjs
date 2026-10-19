@@ -150,7 +150,7 @@ test('follow-up: source-negative/manual-positive murmur warns in all four tabs a
   const resolvedUI = currentUI(app);
   assert.doesNotMatch([resolvedUI.status, ...Object.values(resolvedUI.tabs)].join('\n'), CONFLICT, 'a cleared manual selection cannot leave a stale conflict warning');
   for (const [tab, text] of Object.entries(resolvedUI.tabs)) {
-    assert.match(text, /Heart murmur\(-\)/i, `${tab}: unchecking manual does not delete the recorded negative`);
+    assert.match(text, /Heart murmur(?:\(-\)| was absent)/i, `${tab}: unchecking manual does not delete the recorded negative`);
     assert.doesNotMatch(text, /Heart murmur was noted|notable for heart murmur|Physical examination documented Heart murmur(?:[.,\n]|$)|# Heart murmur(?:\n|$)/i, `${tab}: the unchecked manual positive is removed`);
   }
 });
@@ -207,7 +207,7 @@ test('follow-up: replacing source negative with positive resolves the conflict t
   const resolvedUI = currentUI(app);
   assert.doesNotMatch([resolvedUI.status, ...Object.values(resolvedUI.tabs)].join('\n'), CONFLICT, 'matching source/manual findings remove the previous conflict warning');
   for (const [tab, text] of Object.entries(resolvedUI.tabs)) {
-    assert.match(text, /Heart murmur\(\+\)/i, `${tab}: the replacement positive source is retained`);
+    assert.match(text, /Heart murmur(?:\(\+\)| was present)/i, `${tab}: the replacement positive source is retained`);
     assert.doesNotMatch(text, /Heart murmur\(-\)/i, `${tab}: the superseded negative source is removed`);
   }
   for (const tab of ['summary', 'consultation', 'discharge']) {
@@ -258,7 +258,7 @@ test('follow-up review: hernia conflict detection distinguishes opposite-side fr
   const differentSideUI = currentUI(app);
   assert.doesNotMatch([differentSideUI.status, ...Object.values(differentSideUI.tabs)].join('\n'), CONFLICT, 'right-side absence does not contradict a left-side manual finding');
   for (const [tab, text] of Object.entries(differentSideUI.tabs)) {
-    assert.match(text, /right inguinal hernia\(-\)/i, `${tab}: the right-sided negative source is retained`);
+    assert.match(text, /right inguinal hernia(?:\(-\)| was absent)/i, `${tab}: the right-sided negative source is retained`);
     assert.match(text, /Inguinal hernia(?:\s*\(lt\)|,\s*lt)/i, `${tab}: the left-sided manual finding is retained`);
   }
 
