@@ -157,18 +157,29 @@ test('raw PE grade and laterality are preserved across the three narratives with
 });
 
 test('recorded PE keeps respiratory findings factual while positive hip signs restore only the discharge DDH follow-up template', () => {
-  const app = loadApp();
-  const outputs = app.render(app.parse(`${BASE}
-PE: Respiratory distress with nasal flaring; Fever(+); Ortolani(+)`));
-  narrativeAssertions(outputs, (text, name) => {
-    assert.match(text, /nasal flaring/i, `${name}: raw finding retained`);
-    assert.match(text, /Ortolani/i, `${name}: raw hip finding retained`);
-    assert.doesNotMatch(text, /O2 hood was provided|weaned to room air|resolved without intervention|Free flow oxygen\(\+\)/i, `${name}: raw PE is not a selection of a respiratory or fever course template`);
-    if (name !== 'discharge') assert.doesNotMatch(text, /outpatient follow-up examination was arranged/i,
-      `${name}: no completed follow-up inferred solely from raw PE`);
-    else assert.match(text, /outpatient follow-up examination was arranged/i,
-      'definite positive hip PE restores the original discharge-specific DDH follow-up sentence');
-  });
+  for (const findings of [
+    'Respiratory distress(+) with nasal flaring; Fever(+); Ortolani(+)',
+    'Fever(+); Ortolani(+); Respiratory distress(+) with nasal flaring',
+    'Respiratory distress(+) with nasal flaring with Fever(+); Ortolani(+)',
+    'Fever(+) with Respiratory distress(+) with nasal flaring; Ortolani(+)',
+  ]) {
+    const app = loadApp();
+    const outputs = app.render(app.parse(`${BASE}\nPE: ${findings}`));
+    narrativeAssertions(outputs, (text, name) => {
+      assert.match(text, /nasal flaring/i, `${name}: raw finding retained`);
+      assert.match(text, /Ortolani/i, `${name}: raw hip finding retained`);
+      assert.doesNotMatch(text, /O2 hood was provided|weaned to room air|resolved without intervention|Free flow oxygen\(\+\)/i, `${name}: raw PE is not a selection of a respiratory or fever course template`);
+      if (name !== 'discharge') assert.doesNotMatch(text, /outpatient follow-up examination was arranged/i,
+        `${name}: no completed follow-up inferred solely from raw PE`);
+      else assert.match(text, /outpatient follow-up examination was arranged/i,
+        'definite positive hip PE restores the original discharge-specific DDH follow-up sentence');
+    });
+    const diagnosis = toText(outputs.diagnosis);
+    assert.doesNotMatch(diagnosis, /respiratory distress/i,
+      'source respiratory findings do not become a diagnosis or attach to another diagnosis');
+    assert.match(diagnosis, /# Neonatal fever/);
+    assert.match(diagnosis, /# Positive Ortolani/);
+  }
 });
 
 test('PE text stops at Plan and does not swallow a subsequent maternal section', () => {

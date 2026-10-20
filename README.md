@@ -20,10 +20,12 @@ Mackay Memorial Hospital · BR Admission Summary & Consultation Form Generator
 ### 有資料時的對應顯示
 
 - DDH risk、子宮內壓迫徵象及 hip PE 支援空白、換行、大小寫及全形符號；辨識結果放入原有 PE／DDH 句子。會診中漏掉的風險與所見補在既有新生兒 PE 位置。
+- DDH／壓迫陰性沿用原有寫法；陽性項目使用既有英文名稱及對應句子，補足列舉連接詞、句首大小寫及左右側別的英文。
 - 原始 PE 的分級、左右側及有意義的限定詞保留；同一所見與手動選項合併，避免重複。Plan、Maternal history 等段落不誤作新生兒 PE。
 - 有明確否定、未知、替代關係或真正衝突時，只在相關欄位保留必要限定，不把 `Barlow(+) or Ortolani(+)` 寫成兩項確定陽性。
 - DDH 有風險但缺乏足夠髖部陰性資料時，不補成 hip examination unremarkable。風險本身不成為診斷。
 - HIV 只有明確陽性才輸出；陰性、未提供、未知或結果衝突不加入常規清單。
+- Respiratory distress 保留在入摘、出摘與會診的對應 finding 敘述，不列入診斷清單。
 - 已記錄的同項臨床資料修正原模板相應句子，例如實際處置結果、尚未執行、拒絕或取消。沒有另外建立病程轉寫或轉 NBC 工作流程。
 
 ### 保留的解析與操作修正

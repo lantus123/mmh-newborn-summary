@@ -2,9 +2,9 @@
 
 以下全部為合成輸入，以真正的原版與修正版程式產文。原版基準為整輪 DDH／PE 修改前的 `81a73dcf5738ed58632e54fc9b7f0d1d66088213`。
 
-目標是保留原有模板，僅補正相對應的既有資料。常規預填文句沿用原模板；明確同項資料在原欄位修正，不增加臨床紀錄、來源引文或待確認章節。HIV 僅明確陽性顯示，診斷沒有風險因子或來源附錄。
+目標是保留原有模板，僅補正相對應的既有資料。常規預填文句沿用原模板；明確同項資料在原欄位修正，不增加臨床紀錄、來源引文或待確認章節。HIV 僅明確陽性顯示，診斷沒有風險因子或來源附錄。Respiratory distress 保留在對應 finding 敘述，不列入診斷。DDH／壓迫陰性沿用原有寫法，陽性描述只補正必要的英文文法及側別。
 
-本文件對應 `index.html` SHA-256：`2f0d0848b8b825525bc07f6bec0c0d5dfcbdd4f7ab986bd86056e41dd42a93b6`。完整全文與控制項比較的結果另記錄於測試及本次 PR。
+本文件對應 `index.html` SHA-256：`8c8a8f8e50277b20f66e2c018a583499c6f7affe6be45ca4f7607b25a3905aa8`。完整全文與控制項比較的結果另記錄於測試及本次 PR。
 
 ## 一般原版輸入：三份完整文書
 
@@ -210,7 +210,7 @@ This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks o
 ### 修正版入院摘要
 
 ```text
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, musculoskeletal examination was notable for positive Barlow's sign, positive Ortolani's sign, torticollis. DDH risk factors including breech presentation were identified. The infant was admitted to the Baby Room for routine newborn care.
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, musculoskeletal examination was notable for positive Barlow's sign, positive Ortolani's sign, and torticollis. DDH risk factors including breech presentation were identified. The infant was admitted to the Baby Room for routine newborn care.
 ```
 
 ### 原版會診單
@@ -320,7 +320,7 @@ PE: grade 2/6 systolic murmur at left sternal border; left undescended testis
 ### 修正版入院摘要
 
 ```text
-This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, grade 2/6 systolic murmur at left sternal border and left undescended testis were noted. musculoskeletal examination was notable for positive Ortolani's sign (right), torticollis, asymmetric thigh posture. DDH risk factors including family history of DDH, twin pregnancy were identified. The infant was admitted to the Baby Room for routine newborn care.
+This 1-day-old male infant was born to a 29-year-old G1P1 mother at 39+0 weeks of gestation via NSD. The birth weight was 3200 gm (AGA). Maternal blood type is O, Rh+. Maternal screening was negative for GDM, GBS colonization, infectious serology (HBsAg, HBeAg, RPR). There was no premature rupture of membranes (PROM) or meconium aspiration syndrome (MAS). APGAR scores were 9 and 10 at 1 and 5 minutes, respectively. On physical examination, grade 2/6 systolic murmur at left sternal border and left undescended testis were noted. Musculoskeletal examination was notable for positive Ortolani's sign (right), torticollis, and asymmetric thigh posture. DDH risk factors including family history of DDH and twin pregnancy were identified. The infant was admitted to the Baby Room for routine newborn care.
 ```
 
 ### 修正版會診單
@@ -502,5 +502,4 @@ Upon admission, the infant received routine prophylaxis including HBV vaccine (I
 # Term infant, gestational age 39+0 weeks, BW 3200 gm, AGA
 # Hypotonia
 # Cyanosis
-# Respiratory distress, nasal flaring subcostal retractions
 ```

@@ -137,7 +137,10 @@ test('original template contract: selected controls restore all original endings
   assert.match(outputs.discharge, /Caregivers were counseled/i);
   assert.doesNotMatch(outputs.discharge, /Sepsis evaluation plan selected|Selected transfer plan: NBC|Blood glucose monitoring plan|Counseling checklist/);
   assert.equal(reviews.discharge, '', 'restored discharge controls are expressed in its course, without a duplicate plan checklist');
-  assert.match(outputs.diagnosis, /# Respiratory distress/);
+  assert.doesNotMatch(outputs.diagnosis, /respiratory distress/i);
+  for (const diagnosis of ['Neonatal fever', 'Undescended testis, lt', 'Hydrocele', 'Infant of diabetic mother', 'Rule out neonatal sepsis']) {
+    assert.ok(outputs.diagnosis.includes(`# ${diagnosis}`), `other diagnoses remain: ${diagnosis}`);
+  }
 });
 
 for (const [campus, interval] of [['tpc', /every 2 hours \(Q2H\)/], ['ttmh', /every 8 hours \(Q8H\)/]]) {

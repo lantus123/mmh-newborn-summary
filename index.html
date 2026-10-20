@@ -1078,7 +1078,7 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             fields.push(...ASSESSMENT_FIELDS.hip.map(field=>({...field,diagnosis:(field.positive||field.name).replace(/^[a-z]/,letter=>letter.toUpperCase())})));
             const full=parseAssessmentGroup(source,fields);
             const starts='(?:(?:left|right|bilateral|lt|rt|no|not|positive|negative|possible|suspected)\\s+)*(?:'+fields.map(field=>field.re).join('|')+')';
-            const chunks=source.split(new RegExp('[,;\\n]\\s*(?='+starts+')','gi')).map(chunk=>chunk.trim()).filter(Boolean);
+            const chunks=source.split(new RegExp('(?:[,;\\n]\\s*|\\s+with\\s+)(?='+starts+')','gi')).map(chunk=>chunk.trim()).filter(Boolean);
             const observations=[];
             for(const chunk of chunks){
                 for(const field of fields){
@@ -1371,7 +1371,15 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                 // Keep true uncertainty in the existing finding sentence. Ordinary
                 // negative siblings do not become a new screening catalog.
                 if(group.requiresReview){
-                    for(const part of split(source)){
+                    const positiveParts=part=>{
+                        const parsed=parseAssessmentGroup(part,fields);
+                        if(!parsed.records.length||parsed.records.some(record=>record.state!=='positive'||group.records.find(item=>item.name===record.name)?.state!=='positive')||/\bor\b|或/i.test(part))return [part];
+                        // Separate known positive observations before preserving each
+                        // observation's own side or descriptive detail.
+                        const start='(?:(?:left|right|bilateral|lt|rt|mild|moderate|severe)\\s+|(?:左|右|雙|双)(?:側|侧)?\\s*)*(?:'+fields.map(field=>field.re).join('|')+')';
+                        return part.split(new RegExp('\\s+and\\s+(?='+start+')','i'));
+                    };
+                    for(const part of split(source).flatMap(positiveParts)){
                         const parsed=parseAssessmentGroup(part,fields);
                         const affected=parsed.records.filter(record=>['unknown','conflict'].includes(group.records.find(item=>item.name===record.name)?.state));
                         let residue=part;
@@ -1385,7 +1393,9 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
                             if(!affected.length&&parsed.records.every(record=>record.state==='positive')){
                                 for(const record of parsed.records){
                                     const field=fields.find(item=>item.name===record.name);
-                                    const detail=templateValue(part.replace(new RegExp(field.re,'i'),'').replace(/\(\s*\+\s*\)|\bpositive\b/gi,''));
+                                    const detail=templateValue(part.replace(new RegExp(field.re,'i'),'').replace(/\(\s*\+\s*\)|\bpositive\b/gi,'')
+                                        .replace(/左右(?:兩|两)?[側侧]|[雙双][側侧]/g,'bilateral').replace(/右[側侧]/g,'right').replace(/左[側侧]/g,'left')
+                                        .replace(/(^|[\s,;:()])([左右雙双])(?=$|[\s,;:()])/g,(_,prefix,side)=>prefix+({左:'left',右:'right',雙:'bilateral',双:'bilateral'}[side])));
                                     values[key].push((field.positive||field.name)+(detail?' ('+detail+')':''));
                                 }
                             }else qualifiers.push({key,text:part.trim()});
@@ -1456,8 +1466,11 @@ HBsAg(-), HBeAg(-)" class="w-full p-3 border border-slate-300 rounded-lg shadow-
             other.unshift(...sourceParts);
             if(other.length)parts.push(`${joinOxford(other.map(hlSource))} ${other.length===1?'was':'were'} noted`);
             const msk=[...ddh.hip,...ddh.compression,...ddh.qualifiers.filter(item=>item.key!=='risk').map(item=>item.text)];
-            if(msk.length)parts.push(`musculoskeletal examination was notable for ${msk.map(hlSource).join(', ')}`);
-            if(ddh.risk.length){const risk=ddh.risk.map(hlSource).join(', ');parts.push(!msk.length&&ddh.hipNegative?`DDH screening noted risk factors including ${risk}, but physical signs were negative`:`DDH risk factors including ${risk} were identified`);}
+            if(msk.length){
+                const positiveOnly=!ddh.qualifiers.some(item=>item.key!=='risk');
+                parts.push(`${positiveOnly&&parts.length?'Musculoskeletal':'musculoskeletal'} examination was notable for ${positiveOnly?joinOxford(msk.map(hlSource)):msk.map(hlSource).join(', ')}`);
+            }
+            if(ddh.risk.length){const risk=joinOxford(ddh.risk.map(hlSource));parts.push(!msk.length&&ddh.hipNegative?`DDH screening noted risk factors including ${risk}, but physical signs were negative`:`DDH risk factors including ${risk} were identified`);}
             const uncertainRisk=ddh.qualifiers.filter(item=>item.key==='risk').map(item=>item.text);
             if(uncertainRisk.length)parts.push(`DDH screening noted ${hlSource(uncertainRisk.join('; '))}`);
             let text=parts.length?`On physical examination, ${parts.join('. ')}.`:!sourcePresent||normal?'Physical examination revealed no gross anomalies.':'';
@@ -1905,7 +1918,8 @@ ${disposition}`;
                 lines.push(`# Rule out neonatal sepsis`);
             }
 
-            return lines.map(l => hlSource(l)).join('<br>');
+            // Keep respiratory distress in the finding narratives only.
+            return lines.filter(l => !/^# Respiratory distress\b/i.test(l)).map(l => hlSource(l)).join('<br>');
         }
 
         // ============================================================
