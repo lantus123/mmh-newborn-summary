@@ -31,6 +31,9 @@ original using identical source text and original checkbox selections.
   source data modifies that slot rather than creating a new source section.
 - No new clinical-record, source-quotation, review or plan blocks appear.
   Diagnoses keep the original `#` list without a risk-factor or source appendix.
+- Respiratory distress stays in the related admission, consultation and
+  discharge descriptions, but is not listed as a diagnosis, whether supplied
+  in source PE or selected with the original checkbox. Other diagnoses remain.
 - HIV appears only when definitely positive. DDH risk without sufficient
   negative hip evidence cannot assert unremarkable hips. Alternatives or
   conflicts cannot become two confirmed findings or diagnoses.

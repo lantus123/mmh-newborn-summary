@@ -2,7 +2,8 @@
 
 // Formal adapter of acceptance-outputs/accept-outputs.cjs. Original desired
 // behavior and inspect callbacks are retained except the explicit OUT-04
-// note-template contract restored by the user. The UI-02 prerequisite correction
+// note-template restoration and OUT-08 exclusion of respiratory distress from
+// diagnoses requested by the user. The UI-02 prerequisite correction
 // is documented locally below; it repairs an audit contradiction, not a product
 // defect. Historical `lines` metadata in the copied fixtures is not interpreted.
 const test = require('node:test');
@@ -127,12 +128,17 @@ accept({
 });
 
 accept({
-  id: 'OUT-08', title: '手動選取的呼吸窘迫在診斷欄保留',
-  manualPE: ['Respiratory distress (with nasal flaring, retraction)'],
-  lines: [1039, 1077], desired: '診斷欄至少保留已明確選取的 Respiratory distress，不推定 TTN/RDS 等病因。',
+  id: 'OUT-08', title: '手動選取的呼吸窘迫保留在敘述，不列入診斷',
+  ui: true,
+  configure: app => {
+    app.document.getElementById('peRespDistress').checked = true;
+    app.document.querySelector('#respDistressDetails input[value="nasal flaring"]').checked = true;
+    app.document.querySelector('#respDistressDetails input[value="retraction"]').checked = true;
+  },
+  lines: [1039, 1077], desired: 'Respiratory distress 與症狀保留在三份原有敘述位置，診斷欄不列此項，也不推定 TTN/RDS 等病因。',
   inspect: o => [
     criterion('入摘、會診及出摘有相應呼吸描述', /respiratory distress/i.test(o.summary) && /nasal flaring/.test(o.consultation) && /nasal flaring/.test(o.discharge)),
-    criterion('診斷欄保留 Respiratory distress', /Respiratory distress/i.test(o.diagnosis)),
+    criterion('診斷欄不列 Respiratory distress 或推定病因', !/Respiratory distress|\bTTN\b|\bRDS\b/i.test(o.diagnosis)),
   ],
   evidence: o => ({ consultation: match(o.consultation, /Respiration:[^\n]*/), diagnosis: o.diagnosis }),
 });

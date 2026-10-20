@@ -179,7 +179,7 @@ DDH risk factors: Breech(+)
 子宮內壓迫徵象: 斜頸(+)
 Hip PE: Barlow(+), Ortolani(+)`);
   assert.match(compact(bodies.summary),
-    /musculoskeletal examination was notable for positive Barlow's sign, positive Ortolani's sign, torticollis/i);
+    /musculoskeletal examination was notable for positive Barlow's sign, positive Ortolani's sign, and torticollis/i);
   assert.match(bodies.summary, /DDH risk factors including breech presentation were identified/i);
   assert.ok(compact(bodies.discharge).includes(OLD_POSITIVE_DISCHARGE));
   for (const name of ['summary', 'discharge']) {
@@ -259,4 +259,31 @@ test('HD-10: explicitly pending or canceled DDH follow-up overrides the original
       'the positive hip-sign diagnosis excludes follow-up plans, which belong in the original discharge slot');
     assert.doesNotMatch(bodies.diagnosis, /Risk factors and examination findings/i);
   }
+});
+
+test('HD-11: definite DDH positives keep English side details and fluent lists without mixing independent findings', () => {
+  const { bodies } = specimen(`${BASE}
+DDH risk factors: Breech(+) and Family Hx(+)
+子宮內壓迫徵象: 左側斜頸(+) and 右側足踝內翻(+)
+Hip PE: 右側Ortolani(+), Barlow(-)
+PE: Heart murmur(+), grade 2/6 at left sternal border`);
+  for (const name of ['summary', 'consultation', 'discharge']) {
+    const body = bodies[name];
+    assert.match(body, name === 'discharge'
+      ? /breech presentation, family history of DDH, [^.]*, and /i
+      : /breech presentation and family history of DDH/i,
+    `${name}: the positive list uses the conjunction appropriate to its two or four findings`);
+    assert.match(body, /left(?:-sided)? torticollis|torticollis\s*\(left(?: side)?\)/i, `${name}: torticollis keeps its left side`);
+    assert.match(body, /right(?:-sided)? foot inversion|foot inversion\s*\(right(?: side)?\)/i, `${name}: foot inversion keeps its right side`);
+    assert.match(body, /right[^.;,]*Ortolani|Ortolani[^.;,]*right/i, `${name}: the positive Ortolani sign keeps its right side`);
+    for (const finding of [/breech presentation/gi, /family history of DDH/gi, /torticollis/gi, /foot inversion/gi, /Ortolani/gi]) {
+      assert.equal((body.match(finding) || []).length, 1, `${name}: ${finding} appears once, without being copied into another finding's detail`);
+    }
+    assert.doesNotMatch(body, /左側|右側|斜頸|足踝內翻|positive Barlow|physical examination of the hips was unremarkable/i,
+      `${name}: confirmed positives use English without reversing the negative sibling`);
+    assert.match(body, /2\/6[^.]*left sternal border/i, `${name}: the unrelated PE detail is preserved`);
+  }
+  assert.match(bodies.summary, /\. Musculoskeletal examination was notable for /,
+    'the musculoskeletal sentence starts with a capital after another PE sentence');
+  assert.doesNotMatch(bodies.diagnosis, /Risk factors and examination findings|family history of DDH|breech presentation|^# Positive Barlow/im);
 });
